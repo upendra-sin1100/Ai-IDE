@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,12 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1")
+
+# --- Multi-Model Configuration ---
+# 120b parameter model for reasoning and thinking (e.g. goliath-120b, gpt-oss-120b)
+THINKING_MODEL = os.getenv("THINKING_MODEL", "gpt-oss-120b") 
+# Gemini model for coding and execution
+CODING_MODEL = os.getenv("CODING_MODEL", "gemini-1.5-pro")
 
 # Set GOOGLE_API_KEY for litellm if GEMINI_API_KEY is present
 if GEMINI_API_KEY:
@@ -64,6 +71,115 @@ class ChatRequest(BaseModel):
 class RunRequest(BaseModel):
     language: str
     code: str
+
+
+class TerminalRequest(BaseModel):
+    command: str
+
+# --- IDE Control Schemas ---
+class FileWriteRequest(BaseModel):
+    filepath: str
+    content: str
+
+class FileReadRequest(BaseModel):
+    filepath: str
+
+# --- IDE Control Endpoints (Giving AI Workspace Access) ---
+WORKSPACE_DIR = os.getenv("WORKSPACE_DIR", os.getcwd())
+
+@app.post("/api/ide/write")
+async def write_file(request: FileWriteRequest):
+    """Allows the AI/IDE to write directly to the filesystem."""
+    target_path = os.path.abspath(os.path.join(WORKSPACE_DIR, request.filepath))
+    if not target_path.startswith(os.path.abspath(WORKSPACE_DIR)):
+        return {"error": "Unauthorized path access."}
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write(request.content)
+    return {"status": "success", "message": f"Wrote to {request.filepath}"}
+
+@app.post("/api/ide/read")
+async def read_file(request: FileReadRequest):
+    """Allows the AI/IDE to read from the filesystem."""
+    target_path = os.path.abspath(os.path.join(WORKSPACE_DIR, request.filepath))
+    if not target_path.startswith(os.path.abspath(WORKSPACE_DIR)) or not os.path.exists(target_path):
+        return {"error": "File not found or unauthorized."}
+    with open(target_path, "r", encoding="utf-8") as f:
+        return {"status": "success", "content": f.read()}
+
+# --- Multi-Model Agentic Stream ---
+@app.post("/api/agent/stream")
+async def agent_stream(request: ChatRequest):
+    """Multi-model endpoint: Thinks with GPT-OSS-120b, Executes with Gemini."""
+    messages_dict = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    async def event_generator():
+        thought_process = ""
+        try:
+            # STEP 1: THINKING PHASE (GPT-OSS-120B / Groq)
+            if GROQ_API_KEY:
+                yield json.dumps({"type": "message", "delta": "\n\n🧠 **Thinking Process (GPT-OSS-120b):**\n"})
+                url = f"{GROQ_API_URL}/chat/completions"
+                headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json", "Accept": "text/event-stream"}
+                thinking_messages = [{"role": "system", "content": "You are an AI architect. Plan the solution step-by-step. Do not write the final code."}] + messages_dict
+                payload = {"model": THINKING_MODEL, "messages": thinking_messages, "stream": True}
+                
+                async with httpx.AsyncClient(timeout=None) as client:
+                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                        if resp.status_code < 400:
+                            async for raw_line in resp.aiter_lines():
+                                if raw_line.startswith("data:"):
+                                    content = raw_line[5:].strip()
+                                    if content and content != "[DONE]":
+                                        try:
+                                            data = json.loads(content)
+                                            delta = data["choices"][0]["delta"].get("content", "")
+                                            thought_process += delta
+                                            yield json.dumps({"type": "thinking", "delta": delta})
+                                        except Exception:
+                                            pass
+                yield json.dumps({"type": "message", "delta": "\n\n💻 **Executing (Gemini API):**\n"})
+            
+            # STEP 2: EXECUTION PHASE (Gemini)
+            if not GEMINI_API_KEY:
+                yield json.dumps({"type": "error", "delta": "GEMINI_API_KEY is not set for execution phase."})
+                return
+
+            gemini_messages = [{"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} for m in messages_dict]
+            if thought_process:
+                gemini_messages[-1]["parts"][0]["text"] += f"\n\n[Follow this architectural plan strictly]:\n{thought_process}"
+
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{CODING_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+            gemini_payload = {
+                "system_instruction": {"parts": [{"text": "You are an autonomous IDE agent. Output any file changes or commands explicitly based on the architectural plan."}]},
+                "contents": gemini_messages
+            }
+
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream("POST", gemini_url, json=gemini_payload) as resp:
+                    if resp.status_code >= 400:
+                        body = await resp.aread()
+                        yield json.dumps({"type": "error", "delta": f"Gemini Error: {body.decode(errors='ignore')}"})
+                        return
+                        
+                    async for raw_line in resp.aiter_lines():
+                        if raw_line.startswith("data:"):
+                            content = raw_line[5:].strip()
+                            if content:
+                                try:
+                                    data = json.loads(content)
+                                    if "candidates" in data and data["candidates"] and "content" in data["candidates"][0]:
+                                        text_delta = data["candidates"][0]["content"]["parts"][0].get("text", "")
+                                        yield json.dumps({"type": "message", "delta": text_delta})
+                                except Exception:
+                                    pass
+
+        except Exception as e:
+            yield json.dumps({"type": "error", "delta": str(e)})
+            
+        yield json.dumps({"type": "done", "delta": ""})
+
+    return EventSourceResponse(event_generator())
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -210,32 +326,64 @@ async def chat_standard(request: ChatRequest):
 
 @app.post("/api/run")
 async def run_code(request: RunRequest):
-    piston_languages = {
-        "javascript": {"language": "javascript", "version": "18.15.0"},
-        "typescript": {"language": "typescript", "version": "5.0.3"},
-        "python": {"language": "python", "version": "3.10.0"},
-    }
+    import tempfile, os
 
-    lang = piston_languages.get(request.language)
-    if not lang:
-        return {"output": f"❌ {request.language} cannot be executed directly."}
+    lang = request.language.lower()
+    code = request.code
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://emkc.org/api/v2/piston/execute",
-                json={
-                    "language": lang["language"],
-                    "version": lang["version"],
-                    "files": [{"content": request.code}],
-                },
-                timeout=30,
-            )
-            resp.raise_for_status()
-            result = resp.json()
+        if lang == "python":
+            with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
+                f.write(code)
+                tmp = f.name
+            result = subprocess.run(["python", tmp], capture_output=True, text=True, timeout=15, cwd=tempfile.gettempdir())
+            os.unlink(tmp)
 
-        run = result.get("run", {})
-        output = run.get("stdout") or run.get("stderr") or "No output."
-        return {"output": output, "status": "OK" if not run.get("stderr") else "Error"}
+        elif lang in ("javascript", "typescript"):
+            with tempfile.NamedTemporaryFile(suffix=".js", mode="w", delete=False, encoding="utf-8") as f:
+                # strip ES module syntax node can't run directly
+                cleaned = code.replace("export default ", "// ").replace("export ", "// ")
+                f.write(cleaned)
+                tmp = f.name
+            result = subprocess.run(["node", tmp], capture_output=True, text=True, timeout=15, cwd=tempfile.gettempdir())
+            os.unlink(tmp)
+
+        else:
+            return {"output": f"❌ {lang} not supported.", "status": "Error"}
+
+        output = (result.stdout or "") + (result.stderr or "") or "(no output)"
+        status = "OK" if result.returncode == 0 else "Error"
+        return {"output": output.strip(), "status": status}
+
+    except subprocess.TimeoutExpired:
+        return {"output": "❌ Timed out after 15 seconds.", "status": "Error"}
+    except FileNotFoundError as e:
+        return {"output": f"❌ Runtime not found: {e}", "status": "Error"}
+    except Exception as e:
+        return {"output": f"❌ {str(e)}", "status": "Error"}
+
+
+@app.post("/api/terminal/execute")
+async def execute_terminal_command(request: TerminalRequest):
+    command = request.command.strip()
+    if not command:
+        return {"output": "", "status": "Error", "error": "Command is required."}
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=WORKSPACE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        if not output.strip():
+            output = "(no output)"
+        status = "OK" if result.returncode == 0 else "Error"
+        return {"output": output, "status": status, "returncode": result.returncode}
+    except subprocess.TimeoutExpired:
+        return {"output": "❌ Command timed out after 30 seconds.", "status": "Error"}
     except Exception as e:
         return {"output": f"❌ {str(e)}", "status": "Error"}

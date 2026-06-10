@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 
 const INITIAL_CODE = `// Welcome to AI IDE Pro
@@ -22,18 +22,18 @@ const MESSAGES = [
     thinking:
       "Analyzing workspace... The user has a basic JavaScript file open. Preparing to assist with multi-model capability.",
     content:
-      "Hello! I'm your AI copilot. I've analyzed your workspace — you have a `fibonacci` function open. Want me to optimize it with memoization or add TypeScript types?",
+      "Hello! I'm your AI copilot. I've analyzed your workspace — you have a `fibonacci` function open.\n\nI can suggest code directly into the editor — just ask me to write or add any code and click **Accept** to insert it instantly!",
   },
 ];
 
-const FILES = [
+const INITIAL_FILES = [
   { name: "index.js", lang: "JS", color: "#f0db4f" },
   { name: "utils.ts", lang: "TS", color: "#3178c6" },
   { name: "styles.css", lang: "CSS", color: "#264de4" },
   { name: "README.md", lang: "MD", color: "#83a598" },
 ];
 
-const SUGGESTIONS = ["Optimize code", "Add TS types", "Write tests", "Explain this"];
+const SUGGESTIONS = ["Optimize code", "Add TS types", "Write tests", "Explain this", "Add function"];
 
 const MODELS = [
   { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B", badge: "Groq" },
@@ -66,10 +66,210 @@ function langFromFile(name) {
   if (name.endsWith(".ts")) return "typescript";
   if (name.endsWith(".css")) return "css";
   if (name.endsWith(".md")) return "markdown";
+  if (name.endsWith(".cpp") || name.endsWith(".c++")) return "cpp";
   return "javascript";
 }
 
-/* ── sub-components ── */
+// ── Extract code blocks from AI response ──
+function parseCodeBlocks(text) {
+  const regex = /```(?:\w+)?\n?([\s\S]*?)```/g;
+  const blocks = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    blocks.push({ raw: match[0], code: match[1].trim() });
+  }
+  return blocks;
+}
+
+// ── Renders message content with code blocks as suggestion cards ──
+function MessageContent({ content, onAccept, onReplace }) {
+  if (!content) return null;
+
+  // Split content into text and code block parts
+  const parts = [];
+  const regex = /```(?:\w+)?\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", value: content.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: "code", value: match[1].trim(), raw: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < content.length) {
+    parts.push({ type: "text", value: content.slice(lastIndex) });
+  }
+
+  return (
+    <div style={{ fontSize: 13, lineHeight: 1.65, color: "#cbd5e1", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {parts.map((part, i) => {
+        if (part.type === "text") return <span key={i}>{part.value}</span>;
+        return (
+          <CodeSuggestionCard
+            key={i}
+            code={part.value}
+            onAccept={() => onAccept(part.value)}
+            onReplace={() => onReplace(part.value)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ── The inline suggestion card with Accept / Replace / Copy buttons ──
+function CodeSuggestionCard({ code, onAccept, onReplace }) {
+  const [copied, setCopied] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [replaced, setReplaced] = useState(false);
+
+  const lines = code.split("\n");
+  const preview = lines.slice(0, 6);
+  const hasMore = lines.length > 6;
+  const [expanded, setExpanded] = useState(false);
+  const displayLines = expanded ? lines : preview;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const handleAccept = () => {
+    onAccept();
+    setAccepted(true);
+    setTimeout(() => setAccepted(false), 2000);
+  };
+
+  const handleReplace = () => {
+    onReplace();
+    setReplaced(true);
+    setTimeout(() => setReplaced(false), 2000);
+  };
+
+  return (
+    <div style={{
+      margin: "8px 0",
+      borderRadius: 10,
+      border: "1px solid rgba(99,102,241,0.25)",
+      background: "rgba(15,15,25,0.85)",
+      overflow: "hidden",
+      boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
+    }}>
+      {/* Code area */}
+      <div style={{
+        padding: "10px 12px",
+        fontFamily: "'JetBrains Mono','Fira Code',monospace",
+        fontSize: 11.5,
+        lineHeight: 1.7,
+        color: "#a5b4fc",
+        overflowX: "auto",
+        maxHeight: expanded ? "none" : undefined,
+      }}>
+        {displayLines.map((line, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, minWidth: 0 }}>
+            <span style={{ color: "#374151", userSelect: "none", minWidth: 20, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+            <span style={{ color: "#e2e8f0", whiteSpace: "pre" }}>{line || " "}</span>
+          </div>
+        ))}
+        {hasMore && !expanded && (
+          <div
+            onClick={() => setExpanded(true)}
+            style={{ color: "#6366f1", fontSize: 11, cursor: "pointer", marginTop: 4, paddingLeft: 30 }}
+          >
+            ▼ {lines.length - 6} more lines…
+          </div>
+        )}
+      </div>
+
+      {/* Action bar */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 10px",
+        borderTop: "1px solid rgba(99,102,241,0.12)",
+        background: "rgba(99,102,241,0.04)",
+      }}>
+        {/* Accept button */}
+        <button
+          onClick={handleAccept}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "4px 12px",
+            borderRadius: 6,
+            border: "1px solid rgba(34,197,94,0.4)",
+            background: accepted ? "rgba(34,197,94,0.25)" : "rgba(34,197,94,0.12)",
+            color: "#4ade80",
+            fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(34,197,94,0.22)"}
+          onMouseLeave={e => e.currentTarget.style.background = accepted ? "rgba(34,197,94,0.25)" : "rgba(34,197,94,0.12)"}
+        >
+          {accepted ? (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg> Inserted!</>
+          ) : (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg> Insert</>
+          )}
+        </button>
+
+        {/* Replace button */}
+        <button
+          onClick={handleReplace}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "4px 12px",
+            borderRadius: 6,
+            border: "1px solid rgba(251,191,36,0.35)",
+            background: replaced ? "rgba(251,191,36,0.2)" : "rgba(251,191,36,0.08)",
+            color: "#fbbf24",
+            fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(251,191,36,0.18)"}
+          onMouseLeave={e => e.currentTarget.style.background = replaced ? "rgba(251,191,36,0.2)" : "rgba(251,191,36,0.08)"}
+        >
+          {replaced ? (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg> Replaced!</>
+          ) : (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" strokeLinecap="round" /></svg> Replace All</>
+          )}
+        </button>
+
+        {/* Copy button */}
+        <button
+          onClick={handleCopy}
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "4px 10px",
+            borderRadius: 6,
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "transparent",
+            color: copied ? "#a78bfa" : "#4b5563",
+            fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = "#9ca3af"}
+          onMouseLeave={e => e.currentTarget.style.color = copied ? "#a78bfa" : "#4b5563"}
+        >
+          {copied ? (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg> Copied</>
+          ) : (
+            <><svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg> Copy</>
+          )}
+        </button>
+
+        {/* Line count badge */}
+        <div style={{ marginLeft: "auto", fontSize: 10, color: "#374151", fontFamily: "monospace" }}>
+          {lines.length} lines
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ThinkingBubble({ text }) {
   const [open, setOpen] = useState(false);
@@ -104,23 +304,41 @@ function ThinkingBubble({ text }) {
   );
 }
 
-function Message({ msg }) {
+function Message({ msg, onAcceptCode, onReplaceCode }) {
   const isUser = msg.role === "user";
+  const hasCode = !isUser && msg.content && /```[\s\S]*?```/.test(msg.content);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", marginBottom: 16 }}>
       {!isUser && <ThinkingBubble text={msg.thinking} />}
       {(msg.content || isUser) && (
         <div style={{
-          maxWidth: "88%", padding: "9px 13px",
+          maxWidth: "92%", padding: "9px 13px",
           borderRadius: isUser ? "14px 14px 4px 14px" : "4px 14px 14px 14px",
           background: isUser ? "linear-gradient(135deg, #7c3aed, #5b21b6)" : "rgba(255,255,255,0.05)",
           border: isUser ? "none" : "1px solid rgba(255,255,255,0.07)",
           color: isUser ? "#fff" : "#cbd5e1",
           fontSize: 13, lineHeight: 1.65, fontFamily: "inherit",
-          whiteSpace: "pre-wrap", wordBreak: "break-word",
+          whiteSpace: isUser ? "pre-wrap" : undefined,
+          wordBreak: "break-word",
+          width: hasCode ? "100%" : undefined,
         }}>
-          {msg.content}
-          {msg.streaming && <span style={{ display: "inline-block", width: 8, height: 13, background: "#7c3aed", marginLeft: 2, borderRadius: 2, animation: "cursorBlink 0.8s step-end infinite", verticalAlign: "text-bottom" }} />}
+          {isUser ? (
+            <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+          ) : (
+            <MessageContent
+              content={msg.content}
+              onAccept={onAcceptCode}
+              onReplace={onReplaceCode}
+            />
+          )}
+          {msg.streaming && !hasCode && (
+            <span style={{
+              display: "inline-block", width: 8, height: 13,
+              background: "#7c3aed", marginLeft: 2, borderRadius: 2,
+              animation: "cursorBlink 0.8s step-end infinite", verticalAlign: "text-bottom"
+            }} />
+          )}
         </div>
       )}
     </div>
@@ -137,9 +355,33 @@ function TypingDots() {
   );
 }
 
+// ── Toast notification ──
+function Toast({ message, visible }) {
+  return (
+    <div style={{
+      position: "fixed", bottom: 40, left: "50%", transform: `translateX(-50%) translateY(${visible ? 0 : 20}px)`,
+      background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)",
+      borderRadius: 8, padding: "8px 18px",
+      color: "#4ade80", fontSize: 12.5, fontWeight: 600,
+      opacity: visible ? 1 : 0,
+      transition: "all 0.25s ease",
+      pointerEvents: "none",
+      zIndex: 9999,
+      display: "flex", alignItems: "center", gap: 7,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+    }}>
+      <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {message}
+    </div>
+  );
+}
+
 /* ── main component ── */
 export default function App() {
-  const [code, setCode] = useState(INITIAL_CODE);
+  const [files, setFiles] = useState(INITIAL_FILES);
+  const [fileContents, setFileContents] = useState({ "index.js": INITIAL_CODE });
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState(MESSAGES);
   const [activeTab, setActiveTab] = useState("files");
@@ -148,6 +390,9 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [model, setModel] = useState("llama-3.3-70b-versatile");
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [toast, setToast] = useState({ visible: false, message: "" });
+  const editorRef = useRef(null);
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -155,6 +400,79 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  const code = fileContents[activeFile] || "";
+  const setCode = useCallback((newCode) => {
+    if (typeof newCode === "function") {
+      setFileContents(prev => ({ ...prev, [activeFile]: newCode(prev[activeFile] || "") }));
+    } else {
+      setFileContents(prev => ({ ...prev, [activeFile]: newCode }));
+    }
+  }, [activeFile]);
+
+  const showToast = (message) => {
+    setToast({ visible: true, message });
+    setTimeout(() => setToast({ visible: false, message: "" }), 2200);
+  };
+
+  // ── Insert code at cursor position (append mode) ──
+  const handleAcceptCode = useCallback((snippet) => {
+    if (editorRef.current) {
+      const editor = editorRef.current;
+      const model = editor.getModel();
+      const position = editor.getPosition();
+      const lineCount = model.getLineCount();
+      const lastLine = model.getLineContent(lineCount);
+
+      // Insert after current cursor position with a blank line separator
+      const insertPosition = {
+        lineNumber: position ? position.lineNumber : lineCount,
+        column: position ? model.getLineMaxColumn(position.lineNumber) : lastLine.length + 1,
+      };
+
+      const textToInsert = "\n\n" + snippet;
+
+      editor.executeEdits("ai-insert", [{
+        range: {
+          startLineNumber: insertPosition.lineNumber,
+          startColumn: insertPosition.column,
+          endLineNumber: insertPosition.lineNumber,
+          endColumn: insertPosition.column,
+        },
+        text: textToInsert,
+      }]);
+
+      // Move cursor to end of inserted code
+      const newLineCount = editor.getModel().getLineCount();
+      editor.setPosition({ lineNumber: newLineCount, column: 1 });
+      editor.revealLine(newLineCount, 1); // smooth scroll
+      editor.focus();
+      showToast("Code inserted into editor ✓");
+    } else {
+      // Fallback: append to code state
+      setCode(prev => prev + "\n\n" + snippet);
+      showToast("Code appended ✓");
+    }
+  }, []);
+
+  // ── Replace entire editor content ──
+  const handleReplaceCode = useCallback((snippet) => {
+    if (editorRef.current) {
+      const editor = editorRef.current;
+      const model = editor.getModel();
+      const fullRange = model.getFullModelRange();
+      editor.executeEdits("ai-replace", [{
+        range: fullRange,
+        text: snippet,
+      }]);
+      editor.setPosition({ lineNumber: 1, column: 1 });
+      editor.revealLine(1, 1);
+      editor.focus();
+    } else {
+      setCode(snippet);
+    }
+    showToast("Editor content replaced ✓");
+  }, []);
 
   /* ── streaming send ── */
   const handleSend = async (text) => {
@@ -214,7 +532,9 @@ export default function App() {
               updated[updated.length - 1] = last;
               return updated;
             });
-          } catch { }
+          } catch (error) {
+            console.error("Failed to parse streamed payload:", error);
+          }
         }
       }
 
@@ -229,6 +549,61 @@ export default function App() {
       console.error(err);
       setIsTyping(false);
       setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Connection error — is the backend running?", streaming: false }]);
+    }
+  };
+
+  const handleRunCode = async () => {
+    if (isRunning) return;
+    const runLanguage = langFromFile(activeFile);
+    const supported = new Set(["javascript", "typescript", "python"]);
+    if (!supported.has(runLanguage)) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `⚠️ ${activeFile} can't be executed. Use JS, TS, or Python.`,
+        streaming: false,
+      }]);
+      return;
+    }
+    if (runLanguage === "python" && code.includes("input(")) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "⚠️ This code uses input() which requires interactive stdin.\nRemove input() calls or hardcode test values to run here.",
+        streaming: false,
+      }]);
+      return;
+    }
+    setIsRunning(true);
+    setMessages(prev => [...prev, { role: "assistant", content: `▶ Running ${activeFile}...`, streaming: true }]);
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: runLanguage, code }),
+      });
+      const result = await res.json();
+      const output = result.output || "No output.";
+      const status = result.status || "OK";
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: `\`\`\`\n${output}\n\`\`\``,
+          streaming: false,
+        };
+        return updated;
+      });
+    } catch (err) {
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: `⚠️ Run failed: ${err.message}`,
+          streaming: false,
+        };
+        return updated;
+      });
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -253,7 +628,17 @@ export default function App() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
         ::placeholder { color: #374151; }
+        
+        ::view-transition-group(*),
+        ::view-transition-old(*),
+        ::view-transition-new(*) {
+          animation-duration: 0.25s;
+          animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+        }
       `}</style>
+
+      {/* Toast */}
+      <Toast message={toast.message} visible={toast.visible} />
 
       {/* ── Title Bar ── */}
       <div style={{
@@ -276,14 +661,23 @@ export default function App() {
           <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", letterSpacing: "0.02em" }}>AI IDE Pro</span>
         </div>
 
-        {/* Center menu */}
-        <div style={{ display: "flex", gap: 20 }}>
-          {["File", "Edit", "View", "Run", "Terminal", "Help"].map(item => (
-            <span key={item} style={{ fontSize: 12, color: "#4b5563", cursor: "pointer" }}
-              onMouseEnter={e => e.target.style.color = "#e2e8f0"}
-              onMouseLeave={e => e.target.style.color = "#4b5563"}>{item}</span>
-          ))}
-        </div>
+        {/* Center: just a Run button */}
+        <button
+          onClick={handleRunCode}
+          disabled={isRunning}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "4px 14px", borderRadius: 6, border: "none", cursor: isRunning ? "not-allowed" : "pointer",
+            background: isRunning ? "rgba(124,58,237,0.2)" : "rgba(124,58,237,0.85)",
+            color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+            opacity: isRunning ? 0.6 : 1, transition: "all 0.15s",
+          }}
+        >
+          <svg width="11" height="11" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M5 3l14 9-14 9V3z" />
+          </svg>
+          {isRunning ? "Running…" : "Run"}
+        </button>
 
         {/* Right: model picker */}
         <div style={{ position: "relative" }}>
@@ -383,8 +777,27 @@ export default function App() {
 
             {activeTab === "files" && (
               <div style={{ padding: "4px 0" }}>
-                <div style={{ padding: "4px 12px 2px", fontSize: 10, color: "#374151", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Project</div>
-                {FILES.map(f => (
+                <div style={{ padding: "4px 12px 2px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 10, color: "#374151", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Project</span>
+                  <button
+                    onClick={() => {
+                      const name = prompt("Enter file name (e.g. dsa.cpp):");
+                      if (name && !files.find(f => f.name === name)) {
+                        let lang = "TXT", color = "#9ca3af";
+                        if (name.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
+                        else if (name.endsWith(".ts")) { lang = "TS"; color = "#3178c6"; }
+                        else if (name.endsWith(".css")) { lang = "CSS"; color = "#264de4"; }
+                        else if (name.endsWith(".md")) { lang = "MD"; color = "#83a598"; }
+                        else if (name.endsWith(".cpp") || name.endsWith(".c++")) { lang = "C++"; color = "#00599C"; }
+                        setFiles([...files, { name, lang, color }]);
+                        setFileContents(prev => ({ ...prev, [name]: "" }));
+                        setActiveFile(name);
+                      }
+                    }}
+                    style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                  >+</button>
+                </div>
+                {files.map(f => (
                   <div key={f.name} onClick={() => setActiveFile(f.name)}
                     style={{
                       display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer",
@@ -430,7 +843,7 @@ export default function App() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#0d1117", overflow: "hidden", minWidth: 0 }}>
           {/* Tab Bar */}
           <div style={{ display: "flex", alignItems: "stretch", background: "#0d1117", borderBottom: "1px solid rgba(255,255,255,0.05)", height: 36, flexShrink: 0 }}>
-            {FILES.slice(0, 3).map(f => (
+            {files.map(f => (
               <div key={f.name} onClick={() => setActiveFile(f.name)}
                 style={{
                   display: "flex", alignItems: "center", gap: 7, padding: "0 14px", cursor: "pointer", fontSize: 12,
@@ -443,10 +856,6 @@ export default function App() {
               >
                 <span style={{ fontSize: 9.5, fontWeight: 700, color: f.color, fontFamily: "monospace" }}>{f.lang}</span>
                 {f.name}
-                {activeFile === f.name && (
-                  <span style={{ marginLeft: 2, color: "#4b5563", fontSize: 14, lineHeight: 1 }}
-                    onClick={e => { e.stopPropagation(); setActiveFile(FILES[0].name); }}>×</span>
-                )}
               </div>
             ))}
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 14px", gap: 4, color: "#374151", fontSize: 11 }}>
@@ -463,6 +872,7 @@ export default function App() {
               theme="vs-dark"
               value={code}
               onChange={v => setCode(v || "")}
+              onMount={(editor) => { editorRef.current = editor; }}
               options={{
                 minimap: { enabled: false },
                 fontSize: 13,
@@ -503,7 +913,7 @@ export default function App() {
 
         {/* ── Chat Panel ── */}
         <div style={{
-          width: 320, display: "flex", flexDirection: "column",
+          width: 340, display: "flex", flexDirection: "column",
           background: "#0d1117", borderLeft: "1px solid rgba(255,255,255,0.06)", flexShrink: 0,
         }}>
           {/* Chat Header */}
@@ -535,7 +945,14 @@ export default function App() {
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 0" }}>
-            {messages.map((msg, i) => <Message key={i} msg={msg} />)}
+            {messages.map((msg, i) => (
+              <Message
+                key={i}
+                msg={msg}
+                onAcceptCode={handleAcceptCode}
+                onReplaceCode={handleReplaceCode}
+              />
+            ))}
             {isTyping && <TypingDots />}
             <div ref={chatEndRef} />
           </div>
