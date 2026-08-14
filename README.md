@@ -27,7 +27,7 @@ python -m venv .venv
 
 ```bash
 pip install -r requirements.txt
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 3. Environment variables
@@ -39,6 +39,8 @@ GROQ_API_KEY=your_groq_key
 GEMINI_API_KEY=your_gemini_key
 WORKSPACE_DIR=..\   # optional, default is repo root
 ```
+
+- The original single-file backend is preserved as `backend/main_old.py` during the migration.
 
 ## Frontend - Quickstart
 
@@ -58,6 +60,7 @@ npm run preview
 ## Notes
 
 - The backend exposes several endpoints used by the frontend, including streaming chat and IDE file read/write APIs.
-- For local development, ensure CORS origins in `backend/main.py` include your frontend origin (default: `http://localhost:5173`).
+- For local development, ensure CORS origins in `backend/.env` include your frontend origin (default: `http://localhost:5173`).
+- The frontend reads its API base URL from `VITE_API_URL` in `frontend/.env`.
 
 If you'd like, I can also update the `README.md` to include architecture diagrams, API examples, or env var templates.

@@ -1,111 +1,135 @@
-import React, { useEffect, useRef } from 'react';
-import { Sparkles, Send, Bot, User, Cpu, GripHorizontal } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import ThinkingBlock from './ThinkingBlock';
+import React, { useState, useRef, useEffect } from "react";
+import { useChatStream } from "../../hooks/useChatStream";
 
-export default function ChatPanel({ messages, input, setInput, onSendMessage }) {
+export function ChatPanel({ activeFile = { filename: "App.jsx", content: "// Workspace content" } }) {
+  const { messages, isLoading, sendMessage, clearMessages } = useChatStream();
+  const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   }, [messages]);
 
+  const handleSend = (e) => {
+    e?.preventDefault();
+    if (!inputText.trim() || isLoading) return;
+    sendMessage(inputText, activeFile);
+    setInputText("");
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const triggerQuickAction = (promptPrefix) => {
+    const fullPrompt = `${promptPrefix} for file ${activeFile.filename}`;
+    sendMessage(fullPrompt, activeFile);
+  };
+
   return (
-    <div className="w-[400px] h-full flex flex-col bg-[#0f0f0f] border-l border-white/5 text-neutral-200 shadow-[-20px_0_30px_rgba(0,0,0,0.3)] z-20 shrink-0">
-      {/* Header */}
-      <div className="h-14 px-5 border-b border-white/5 flex items-center justify-between font-medium bg-gradient-to-r from-[#0f0f0f] to-[#141414] select-none">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-blue-600 shadow-[0_0_15px_rgba(147,51,234,0.3)]">
-            <Sparkles size={16} className="text-white" />
-            <div className="absolute inset-0 rounded-lg bg-white/20 mix-blend-overlay"></div>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-purple-200 to-blue-200">AI Co-Pilot</span>
-            <span className="text-[10px] text-green-400 flex items-center gap-1 font-mono">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-              Online
-            </span>
-          </div>
+    <aside className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
+      {/* Top Header */}
+      <div className="h-10 px-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+          <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase">AI Assistant</span>
         </div>
-        <button className="text-neutral-500 hover:text-neutral-300 transition-colors p-1.5 rounded-md hover:bg-white/5">
-          <GripHorizontal size={18} />
+        <button
+          onClick={clearMessages}
+          title="Clear Conversation"
+          className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition text-xs flex items-center gap-1"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
         </button>
       </div>
 
-      {/* Messages Stream */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-        {messages.map((msg, index) => (
-          <div key={index} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-            
-            <div className="flex items-center gap-2 mb-1.5 px-1 opacity-70">
-              {msg.role === 'user' ? (
-                <>
-                  <span className="text-[11px] font-medium text-neutral-400">You</span>
-                  <User size={12} className="text-neutral-400" />
-                </>
-              ) : (
-                <>
-                  <Bot size={12} className="text-purple-400" />
-                  <span className="text-[11px] font-medium text-purple-400">Co-Pilot</span>
-                </>
-              )}
-            </div>
+      {/* Context Badge */}
+      <div className="px-3 py-1.5 bg-slate-950/80 border-b border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+        <span>Active Context:</span>
+        <span className="font-mono text-cyan-400 bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">
+          {activeFile.filename}
+        </span>
+      </div>
 
-            <div className={`max-w-[90%] rounded-2xl p-4 shadow-sm relative ${
-              msg.role === 'user' 
-                ? 'bg-gradient-to-br from-purple-600 to-purple-700 text-white rounded-tr-sm border border-purple-500/30' 
-                : 'bg-[#1a1a1a] text-neutral-200 rounded-tl-sm border border-white/5 shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
-            }`}>
-              
-              {/* Render Thinking Block if it exists */}
-              {msg.thinking && <ThinkingBlock content={msg.thinking} />}
-              
-              {/* Render Main Content */}
-              <div className={`prose max-w-none text-sm leading-relaxed ${msg.role === 'user' ? 'prose-invert prose-p:text-white' : 'prose-invert prose-p:text-neutral-300 prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-white/10'}`}>
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+      {/* Message Feed Area */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 space-y-3 px-4">
+            <div className="w-10 h-10 rounded-full bg-slate-800/80 flex items-center justify-center text-cyan-400 text-lg">
+              ✨
+            </div>
+            <p className="text-xs">Ask questions, request code refactoring, or generate unit tests.</p>
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+            >
+              <span className="text-[10px] text-slate-500 mb-1 px-1">
+                {msg.role === "user" ? "You" : "AI"}
+              </span>
+              <div
+                className={`p-2.5 rounded-lg max-w-[90%] whitespace-pre-wrap leading-relaxed ${msg.role === "user"
+                    ? "bg-cyan-600 text-white rounded-br-none"
+                    : "bg-slate-950 border border-slate-800 text-slate-200 rounded-bl-none font-mono"
+                  }`}
+              >
+                {msg.content || (isLoading && <span className="animate-pulse">Thinking...</span>)}
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Bar */}
-      <div className="p-4 bg-gradient-to-t from-[#0a0a0a] to-transparent">
-        <form 
-          onSubmit={onSendMessage} 
-          className="relative flex items-end gap-2 bg-[#1a1a1a] border border-white/10 rounded-xl p-1.5 focus-within:border-purple-500/50 focus-within:shadow-[0_0_20px_rgba(147,51,234,0.15)] transition-all duration-300"
-        >
-          <div className="absolute left-3 top-3 text-neutral-500">
-            <Cpu size={18} />
-          </div>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onSendMessage(e);
-              }
-            }}
-            placeholder="Ask AI to write or debug code..."
-            className="flex-1 bg-transparent border-none px-9 py-2 text-sm text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:ring-0 resize-none min-h-[40px] max-h-[120px] scrollbar-thin scrollbar-thumb-white/10"
-            rows={1}
-            style={{ height: input ? 'auto' : '40px' }}
-          />
-          <button 
-            type="submit" 
-            disabled={!input.trim()}
-            className="mb-0.5 mr-0.5 bg-purple-600 disabled:bg-neutral-800 hover:bg-purple-500 disabled:text-neutral-600 text-white p-2.5 rounded-lg transition-all duration-200 group shrink-0 shadow-[0_2px_10px_rgba(147,51,234,0.2)] disabled:shadow-none"
-          >
-            <Send size={16} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-          </button>
-        </form>
-        <div className="text-center mt-2 text-[10px] text-neutral-600 font-medium tracking-wide">
-          AI can make mistakes. Verify code before deploying.
-        </div>
+      {/* Quick Prompt Actions */}
+      <div className="px-2 py-1.5 border-t border-slate-800/80 flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <button onClick={() => triggerQuickAction("Explain code")} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] whitespace-nowrap transition">
+          ✨ Explain
+        </button>
+        <button onClick={() => triggerQuickAction("Refactor code")} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] whitespace-nowrap transition">
+          🔧 Refactor
+        </button>
+        <button onClick={() => triggerQuickAction("Write tests")} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] whitespace-nowrap transition">
+          🧪 Test
+        </button>
+        <button onClick={() => triggerQuickAction("Add docs")} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] whitespace-nowrap transition">
+          📝 Document
+        </button>
       </div>
-    </div>
+
+      {/* Input Box Form */}
+      <form onSubmit={handleSend} className="p-2 border-t border-slate-800 bg-slate-950">
+        <div className="relative flex items-center">
+          <textarea
+            rows={2}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask AI anything... (Ctrl+Enter)"
+            className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-2.5 pr-8 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
+          />
+          <button
+            type="submit"
+            disabled={isLoading || !inputText.trim()}
+            className="absolute right-2 p-1 text-cyan-400 disabled:text-slate-600 hover:text-cyan-300 transition"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </button>
+        </div>
+      </form>
+    </aside>
   );
 }
