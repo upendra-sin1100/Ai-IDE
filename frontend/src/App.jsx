@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
+import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import "./App.css";
 
 const INITIAL_CODE = `// Welcome to AI IDE Pro
@@ -23,13 +24,14 @@ const MESSAGES = [
     thinking:
       "Analyzing workspace... Gemini AI copilot ready. Ready to process code and provide optimized solutions.",
     content:
-      "Hello! I'm your AI copilot powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\n```js\n// Try optimized iterative fibonacci:\nfunction fibonacciFast(n) {\n  let a = 0, b = 1;\n  for (let i = 0; i < n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return a;\n}\n```",
+      "Hello! I'm your AI copilot powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\nUse the **Run** button up top to execute your code — output shows up in the terminal drawer below the editor.\n\n```js\n// Try optimized iterative fibonacci:\nfunction fibonacciFast(n) {\n  let a = 0, b = 1;\n  for (let i = 0; i < n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return a;\n}\n```",
   },
 ];
 
 const INITIAL_FILES = [
   { name: "index.js", lang: "JS", color: "#f0db4f" },
   { name: "utils.ts", lang: "TS", color: "#3178c6" },
+  { name: "Main.java", lang: "JAVA", color: "#b07219" },
   { name: "styles.css", lang: "CSS", color: "#264de4" },
   { name: "README.md", lang: "MD", color: "#83a598" },
 ];
@@ -66,23 +68,13 @@ const NAV = [
 function langFromFile(name) {
   if (name.endsWith(".ts")) return "typescript";
   if (name.endsWith(".css")) return "css";
+  if (name.endsWith(".java")) return "java";
   if (name.endsWith(".md")) return "markdown";
   if (name.endsWith(".cpp") || name.endsWith(".c++")) return "cpp";
   if (name.endsWith(".py")) return "python";
   if (name.endsWith(".json")) return "json";
   if (name.endsWith(".html")) return "html";
   return "javascript";
-}
-
-// ── Extract code blocks from AI response ──
-function parseCodeBlocks(text) {
-  const regex = /```(?:\w+)?\n?([\s\S]*?)```/g;
-  const blocks = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    blocks.push({ raw: match[0], code: match[1].trim() });
-  }
-  return blocks;
 }
 
 // ── Renders message content with code blocks as suggestion cards ──
@@ -383,16 +375,47 @@ export default function App() {
   const [fileContents, setFileContents] = useState({
     "index.js": INITIAL_CODE,
     "utils.ts": `export function add(a: number, b: number): number {\n  return a + b;\n}`,
-    "styles.css": `/* Global App Styles */\n.container {\n  padding: 20px;\n}`,
+    "Main.java": `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java in AI IDE Pro!");\n    }\n}`,
+    "styles.css": `/* Live CSS Preview Demo */\n.card {\n  background: linear-gradient(135deg, #1e1b4b, #312e81);\n  color: #f8fafc;\n  padding: 24px;\n  border-radius: 12px;\n  border: 1px solid #6366f1;\n  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);\n}\n.title {\n  color: #a5b4fc;\n  font-size: 18px;\n  font-weight: bold;\n  margin-bottom: 8px;\n}\n.btn {\n  background: #4f46e5;\n  color: white;\n  padding: 8px 16px;\n  border-radius: 6px;\n  border: none;\n  cursor: pointer;\n  font-weight: 600;\n  margin-top: 12px;\n}\n.btn:hover {\n  background: #6366f1;\n}`,
     "README.md": `# AI IDE Pro\n\nNext generation AI coding workspace.`,
   });
+
+  // Resizable AI Copilot Chat panel width
+  const [chatWidth, setChatWidth] = useState(() => {
+    const saved = localStorage.getItem("ai_ide_chat_width");
+    return saved ? Math.min(600, Math.max(260, parseInt(saved, 10))) : 340;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDownResize = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = chatWidth;
+
+    const handlePointerMove = (moveEvent) => {
+      const deltaX = startX - moveEvent.clientX;
+      const newWidth = Math.min(600, Math.max(260, startWidth + deltaX));
+      setChatWidth(newWidth);
+      localStorage.setItem("ai_ide_chat_width", newWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizing(false);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState(MESSAGES);
   const [activeTab, setActiveTab] = useState("files");
   const [activeFile, setActiveFile] = useState("index.js");
   const [isTyping, setIsTyping] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  
+
   const [modelsList, setModelsList] = useState(DEFAULT_MODELS);
   const [selectedModelId, setSelectedModelId] = useState("gemini-1.5-flash");
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -402,6 +425,19 @@ export default function App() {
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+  // Interactive code execution config for TerminalPanel
+  const [activeRunConfig, setActiveRunConfig] = useState(null);
+
+  // ── Terminal state (from terminal build) ──
+  const [terminalOpen, setTerminalOpen] = useState(true);
+  const [terminalTab, setTerminalTab] = useState("terminal"); // 'terminal' | 'output' | 'stdin'
+  const [terminalLogs, setTerminalLogs] = useState([
+    "$ AI IDE Pro Environment Ready",
+    "$ Node.js v20.10.0 / Python 3.11 available",
+  ]);
+  const [stdinInput, setStdinInput] = useState("");
+  const terminalEndRef = useRef(null);
 
   // ── Fetch dynamic models list from backend on mount ──
   useEffect(() => {
@@ -433,6 +469,10 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [terminalLogs]);
 
   const code = fileContents[activeFile] || "";
   const setCode = useCallback((newCode) => {
@@ -604,73 +644,32 @@ export default function App() {
     }
   };
 
+  // ── Run code: streams live interactive WebSocket session into terminal ──
   const handleRunCode = async () => {
-    if (isRunning) return;
     const runLanguage = langFromFile(activeFile);
-    const supported = new Set(["javascript", "typescript", "python"]);
+    const supported = new Set(["javascript", "typescript", "python", "java", "css"]);
+
+    setTerminalOpen(true);
+
+    if (runLanguage === "css") {
+      setTerminalTab("preview");
+      return;
+    }
+
+    setTerminalTab("terminal");
+
     if (!supported.has(runLanguage)) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `⚠️ ${activeFile} can't be executed. Use JS, TS, or Python.`,
-        streaming: false,
-      }]);
+      setTerminalLogs(prev => [...prev, `\n$ run ${activeFile}`, `⚠️ ${activeFile} can't be executed. Use JS, TS, Python, Java, or CSS.`]);
       return;
     }
-    if (runLanguage === "python" && code.includes("input(")) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "⚠️ This code uses input() which requires interactive stdin.\nRemove input() calls or hardcode test values to run here.",
-        streaming: false,
-      }]);
-      return;
-    }
-    setIsRunning(true);
-    setMessages(prev => [...prev, { role: "assistant", content: `▶ Running ${activeFile}...`, streaming: true }]);
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: runLanguage, code }),
-      });
-      const result = await res.json();
-      const output = result.output || "No output.";
-      setMessages(prev => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: `\`\`\`\n${output}\n\`\`\``,
-          streaming: false,
-        };
-        return updated;
-      });
-    } catch (err) {
-      console.warn("Backend run offline, fallback execution:", err);
-      let localOutput = "";
-      try {
-        if (runLanguage === "javascript") {
-          const logs = [];
-          const customConsole = { log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')) };
-          const runFn = new Function('console', code);
-          runFn(customConsole);
-          localOutput = logs.join('\n') || "Code executed successfully (no console output).";
-        } else {
-          localOutput = `Local execution for ${runLanguage}:\nCode parsed cleanly. Backend runner active on http://localhost:8000.`;
-        }
-      } catch (evalErr) {
-        localOutput = `Runtime Error: ${evalErr.message}`;
-      }
-      setMessages(prev => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: `\`\`\`\n${localOutput}\n\`\`\``,
-          streaming: false,
-        };
-        return updated;
-      });
-    } finally {
-      setIsRunning(false);
-    }
+
+    // Trigger live interactive WebSocket session
+    setActiveRunConfig({
+      language: runLanguage,
+      code,
+      fileName: activeFile,
+      runId: Date.now(),
+    });
   };
 
   const handleKeyDown = e => {
@@ -694,7 +693,7 @@ export default function App() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
         ::placeholder { color: #4b5563; }
-        
+
         ::view-transition-group(*),
         ::view-transition-old(*),
         ::view-transition-new(*) {
@@ -727,23 +726,47 @@ export default function App() {
           <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", letterSpacing: "0.02em" }}>AI IDE Pro</span>
         </div>
 
-        {/* Center: Run button */}
-        <button
-          onClick={handleRunCode}
-          disabled={isRunning}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "4px 14px", borderRadius: 6, border: "none", cursor: isRunning ? "not-allowed" : "pointer",
-            background: isRunning ? "rgba(124,58,237,0.2)" : "rgba(124,58,237,0.85)",
-            color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-            opacity: isRunning ? 0.6 : 1, transition: "all 0.15s",
-          }}
-        >
-          <svg width="11" height="11" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M5 3l14 9-14 9V3z" />
-          </svg>
-          {isRunning ? "Running…" : "Run"}
-        </button>
+        {/* Center: Run + Terminal toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={handleRunCode}
+            disabled={isRunning}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "4px 14px", borderRadius: 6, border: "none", cursor: isRunning ? "not-allowed" : "pointer",
+              background: activeFile.endsWith(".css") ? "linear-gradient(135deg,#2563eb,#3b82f6)" : isRunning ? "rgba(124,58,237,0.2)" : "rgba(124,58,237,0.85)",
+              color: "#fff", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+              opacity: isRunning ? 0.6 : 1, transition: "all 0.15s",
+            }}
+          >
+            {activeFile.endsWith(".css") ? (
+              <>
+                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                Preview
+              </>
+            ) : (
+              <>
+                <svg width="11" height="11" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M5 3l14 9-14 9V3z" />
+                </svg>
+                {isRunning ? "Running…" : "Run"}
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={() => setTerminalOpen(v => !v)}
+            style={{
+              background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#a78bfa",
+              fontSize: 11, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            {terminalOpen ? "Hide Terminal" : "Show Terminal"}
+          </button>
+        </div>
 
         {/* Right: model picker */}
         <div style={{ position: "relative" }}>
@@ -906,7 +929,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Code Editor */}
+        {/* Code Editor + Terminal */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#0d1117", overflow: "hidden", minWidth: 0 }}>
           {/* Tab Bar */}
           <div style={{ display: "flex", alignItems: "stretch", background: "#0d1117", borderBottom: "1px solid rgba(255,255,255,0.05)", height: 36, flexShrink: 0 }}>
@@ -931,7 +954,7 @@ export default function App() {
           </div>
 
           {/* Monaco Editor */}
-          <div style={{ flex: 1, overflow: "hidden" }}>
+          <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
             <Editor
               height="100%"
               width="100%"
@@ -956,8 +979,100 @@ export default function App() {
                 guides: { bracketPairs: true },
                 formatOnPaste: true,
                 tabSize: 2,
+                automaticLayout: true,
               }}
             />
+          </div>
+
+          {/* ── Bottom Terminal Drawer ── */}
+          <div style={{
+            height: terminalOpen ? (terminalTab === "terminal" ? 220 : 200) : 30, flexShrink: 0, transition: "height 0.15s",
+            background: "#090d11", borderTop: "1px solid rgba(255,255,255,0.08)",
+            display: "flex", flexDirection: "column",
+          }}>
+            {/* Terminal Header */}
+            <div style={{ height: 30, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", background: "#0d1117", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ display: "flex", gap: 16, fontSize: 11, fontWeight: 600 }}>
+                <span
+                  onClick={() => setTerminalTab("terminal")}
+                  style={{ color: terminalTab === "terminal" ? "#e2e8f0" : "#6b7280", borderBottom: terminalTab === "terminal" ? "2px solid #7c3aed" : "none", paddingBottom: 4, cursor: "pointer" }}
+                >
+                  TERMINAL
+                </span>
+                <span
+                  onClick={() => setTerminalTab("output")}
+                  style={{ color: terminalTab === "output" ? "#e2e8f0" : "#6b7280", borderBottom: terminalTab === "output" ? "2px solid #7c3aed" : "none", paddingBottom: 4, cursor: "pointer" }}
+                >
+                  OUTPUT
+                </span>
+                <span
+                  onClick={() => setTerminalTab("preview")}
+                  style={{ color: terminalTab === "preview" ? "#e2e8f0" : "#6b7280", borderBottom: terminalTab === "preview" ? "2px solid #7c3aed" : "none", paddingBottom: 4, cursor: "pointer" }}
+                >
+                  PREVIEW
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setTerminalLogs([])} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>Clear</button>
+                <button onClick={() => setTerminalOpen(v => !v)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>
+                  {terminalOpen ? "▼" : "▲"}
+                </button>
+              </div>
+            </div>
+
+            {/* Interactive Terminal (xterm.js + WebSocket) */}
+            {terminalOpen && terminalTab === "terminal" && (
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
+                <TerminalPanel
+                  onClose={() => setTerminalOpen(false)}
+                  runConfig={activeRunConfig}
+                  onStop={() => setActiveRunConfig(null)}
+                />
+              </div>
+            )}
+
+            {/* Terminal Output Body */}
+            {terminalOpen && terminalTab === "output" && (
+              <div style={{ flex: 1, padding: "10px 14px", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 12, color: "#38bdf8", overflowY: "auto", background: "#05070a" }}>
+                {terminalLogs.map((log, index) => (
+                  <div key={index} style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, color: log.startsWith("$") ? "#a78bfa" : log.startsWith("⚠️") || log.startsWith("Error") || log.startsWith("Runtime Error") ? "#f87171" : "#e2e8f0" }}>
+                    {log}
+                  </div>
+                ))}
+                <div ref={terminalEndRef} />
+              </div>
+            )}
+
+            {/* Stdin Input Body */}
+            {terminalOpen && terminalTab === "stdin" && (
+              <div style={{ flex: 1, padding: "10px 14px", background: "#05070a" }}>
+                <textarea
+                  value={stdinInput}
+                  onChange={e => setStdinInput(e.target.value)}
+                  placeholder="Values your code's input() calls will read, one per line…"
+                  style={{
+                    width: "100%", height: "100%", background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: 8,
+                    color: "#e2e8f0", fontFamily: "'JetBrains Mono','Fira Code',monospace",
+                    fontSize: 12, resize: "none", outline: "none",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Live CSS Preview Body */}
+            {terminalOpen && terminalTab === "preview" && (
+              <div style={{ flex: 1, padding: "16px", background: "#090d16", overflowY: "auto" }}>
+                <style>{fileContents["styles.css"] || (activeFile.endsWith(".css") ? code : "")}</style>
+                <div className="card">
+                  <div className="title">CSS Live Preview</div>
+                  <p style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 12 }}>
+                    Editing styles live. The CSS rules defined in your editor apply directly to this component.
+                  </p>
+                  <button className="btn">Sample Action Button</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Status Bar */}
@@ -978,10 +1093,28 @@ export default function App() {
           </div>
         </div>
 
+        {/* Drag Divider Handle */}
+        <div
+          onPointerDown={handleMouseDownResize}
+          style={{
+            width: 6,
+            cursor: "col-resize",
+            background: isResizing ? "#7c3aed" : "transparent",
+            borderLeft: "1px solid rgba(255,255,255,0.06)",
+            transition: "background 0.15s",
+            userSelect: "none",
+            flexShrink: 0,
+            zIndex: 10,
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.4)"}
+          onMouseLeave={e => { if (!isResizing) e.currentTarget.style.background = "transparent"; }}
+          title="Drag to resize AI Copilot panel"
+        />
+
         {/* ── Chat Panel ── */}
         <div style={{
-          width: 340, display: "flex", flexDirection: "column",
-          background: "#0d1117", borderLeft: "1px solid rgba(255,255,255,0.06)", flexShrink: 0,
+          width: chatWidth, display: "flex", flexDirection: "column",
+          background: "#0d1117", flexShrink: 0, overflow: "hidden",
         }}>
           {/* Chat Header */}
           <div style={{

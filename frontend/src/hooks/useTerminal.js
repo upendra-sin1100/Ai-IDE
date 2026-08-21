@@ -1,57 +1,63 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { openTerminalSocket } from "../api/terminal";
 
-export function useTerminal(onDataReceived) {
+export function useTerminal(onData, runConfig = null) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState(null);
-  const socketRef = useRef(null);
+  const wsRef = useRef(null);
 
   const connect = useCallback(() => {
-    if (socketRef.current) return;
+    setError(null);
+    wsRef.current?.close();
 
-    socketRef.current = openTerminalSocket(
-      (data) => {
-        if (onDataReceived) onDataReceived(data);
-      },
-      () => {
-        setConnected(true);
-        setError(null);
-      },
-      () => {
-        setConnected(false);
-        socketRef.current = null;
-      },
-      (err) => {
-        setError("Terminal connection failed");
-        setConnected(false);
+    const isRun = Boolean(runConfig);
+    const endpoint = isRun
+      ? "ws://127.0.0.1:8000/api/terminal/run_ws"
+      : "ws://127.0.0.1:8000/api/terminal/ws";
+
+    const ws = new WebSocket(endpoint);
+
+    ws.onopen = () => {
+      setConnected(true);
+      setError(null);
+      if (isRun && runConfig) {
+        ws.send(JSON.stringify(runConfig));
       }
-    );
-  }, [onDataReceived]);
+    };
 
-  const sendInput = useCallback((data) => {
-    if (socketRef.current) {
-      socketRef.current.send(data);
-    }
-  }, []);
+    ws.onmessage = (event) => {
+      if (onData) onData(event.data);
+    };
 
-  const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
-  }, []);
+    ws.onerror = () => {
+      setError(isRun ? "Failed to start interactive execution session." : "Failed to connect to backend terminal session.");
+      setConnected(false);
+    };
+
+    ws.onclose = () => {
+      setConnected(false);
+    };
+
+    wsRef.current = ws;
+  }, [onData, runConfig ? JSON.stringify(runConfig) : null]);
 
   useEffect(() => {
     connect();
     return () => {
-      disconnect();
+      wsRef.current?.close();
     };
-  }, [connect, disconnect]);
+  }, [connect]);
 
-  return {
-    connected,
-    error,
-    sendInput,
-    reconnect: connect,
-  };
+  const sendInput = useCallback((data) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(data);
+    }
+  }, []);
+
+  const closeSession = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+  }, []);
+
+  return { connected, error, sendInput, reconnect: connect, closeSession };
 }

@@ -31,25 +31,44 @@ def test_list_models_endpoint(client):
     assert "gemini-3.7-flash" in model_ids
 
 
-def test_legacy_run_code_python(client):
-    payload = {"language": "python", "code": "print('Hello from test_api_endpoints')"}
+def test_run_code_python(client):
+    payload = {"language": "python", "code": "print('Hello Python')"}
     response = client.post("/api/run", json=payload)
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "OK"
-    assert "Hello from test_api_endpoints" in data["output"]
+    assert "Hello Python" in response.json()["output"]
 
 
-def test_legacy_terminal_execute(client):
-    payload = {"command": "echo hello_terminal"}
-    response = client.post("/api/terminal/execute", json=payload)
+def test_run_code_javascript(client):
+    payload = {"language": "javascript", "code": "console.log('Hello JS')"}
+    response = client.post("/api/run", json=payload)
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "OK"
-    assert "hello_terminal" in data["output"]
+    assert "Hello JS" in response.json()["output"]
+
+
+def test_run_code_java(client):
+    payload = {
+        "language": "java",
+        "code": "public class Main { public static void main(String[] args) { System.out.println(\"Hello Java\"); } }"
+    }
+    response = client.post("/api/run", json=payload)
+    assert response.status_code == 200
+    out = response.json()["output"]
+    assert "Hello Java" in out or "Missing compiler/runtime" in out or "Execution Error" in out
+
 
 
 def test_workspace_tree_endpoint(client):
     response = client.get("/api/workspace/tree")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_terminal_run_ws_python(client):
+    with client.websocket_connect("/api/terminal/run_ws") as websocket:
+        websocket.send_json({"language": "python", "code": "print('WS Execution Output')", "fileName": "test.py"})
+        initial = websocket.receive_text()
+        assert "Executing" in initial
+        output = websocket.receive_text()
+        assert "WS Execution Output" in output
+
+

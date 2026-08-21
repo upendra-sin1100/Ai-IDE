@@ -3,21 +3,22 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminal } from "../../hooks/useTerminal";
-import { Terminal as TerminalIcon, X, Minimize2, Maximize2, RefreshCw } from "lucide-react";
 
-export function TerminalPanel({ onClose }) {
+export function TerminalPanel({ onClose, runConfig = null, onStop = null }) {
   const terminalRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const outputBufferRef = useRef([]);
 
   const handleDataFromBackend = useCallback((data) => {
     if (xtermRef.current) {
       xtermRef.current.write(data);
+    } else {
+      outputBufferRef.current.push(data);
     }
   }, []);
 
-  const { connected, error, sendInput, reconnect } = useTerminal(handleDataFromBackend);
+  const { connected, error, sendInput, reconnect, closeSession } = useTerminal(handleDataFromBackend, runConfig);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -30,98 +31,117 @@ export function TerminalPanel({ onClose }) {
         background: "#090d16",
         foreground: "#cbd5e1",
         cursor: "#06b6d4",
-        selectionBackground: "#0891b240",
+        selectionBackground: "rgba(8, 145, 178, 0.25)",
       },
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
-    fitAddon.fit();
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    // Flush any early data received before xterm was ready
+    if (outputBufferRef.current.length > 0) {
+      outputBufferRef.current.forEach((chunk) => term.write(chunk));
+      outputBufferRef.current = [];
+    }
+
+    setTimeout(() => {
+      try {
+        fitAddon.fit();
+      } catch (_) {}
+    }, 50);
 
     term.onData((data) => {
       sendInput(data);
     });
 
-    const handleResize = () => {
+    const doFit = () => {
       try {
-        fitAddon.fit();
+        if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientWidth > 0 && terminalRef.current.clientHeight > 0) {
+          fitAddonRef.current.fit();
+        }
       } catch (_) {}
     };
 
-    window.addEventListener("resize", handleResize);
+    const resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(doFit);
+    });
+
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current);
+    }
+    doFit();
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       term.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
     };
   }, [sendInput]);
 
   useEffect(() => {
+    if (runConfig) {
+      outputBufferRef.current = [];
+      if (xtermRef.current) {
+        xtermRef.current.reset();
+      }
+    }
     if (fitAddonRef.current) {
       setTimeout(() => {
         try {
           fitAddonRef.current.fit();
         } catch (_) {}
-      }, 100);
+      }, 50);
     }
-  }, [isExpanded]);
+  }, [runConfig]);
+
+  const handleStop = () => {
+    closeSession();
+    if (onStop) onStop();
+  };
 
   return (
-    <div
-      className={`flex flex-col bg-[#090d16] border-t border-slate-800 select-none ${
-        isExpanded ? "h-80" : "h-48"
-      } transition-all duration-200`}
-    >
-      {/* Terminal Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-xs text-slate-300">
-        <div className="flex items-center gap-2 font-mono">
-          <TerminalIcon size={14} className="text-cyan-400" />
-          <span className="font-semibold text-slate-200">Terminal</span>
-          <span
-            className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400" : "bg-amber-500 animate-pulse"}`}
-            title={connected ? "Terminal session active" : "Connecting..."}
-          />
+    <div style={{ display: "flex", flexDirection: "column", background: "#090d16", width: "100%", height: "100%", overflow: "hidden" }}>
+      {/* Subheader status bar */}
+      <div style={{ height: 26, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px", background: "#060911", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#94a3b8", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace" }}>
+          <span style={{ color: connected ? "#4ade80" : "#f59e0b" }}>●</span>
+          <span>{runConfig ? `Interactive Execution: ${runConfig.fileName || 'script'}` : "Interactive Shell Session"}</span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-slate-400">
-          <button
-            title="Reconnect"
-            onClick={reconnect}
-            className="p-1 hover:bg-slate-800 hover:text-white rounded"
-          >
-            <RefreshCw size={13} />
-          </button>
-          <button
-            title={isExpanded ? "Collapse" : "Expand"}
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 hover:bg-slate-800 hover:text-white rounded"
-          >
-            {isExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-          {onClose && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {runConfig && (
             <button
-              title="Close Terminal"
-              onClick={onClose}
-              className="p-1 hover:bg-slate-800 hover:text-white rounded"
+              onClick={handleStop}
+              style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
             >
-              <X size={13} />
+              ■ Stop Process
             </button>
           )}
+          <button
+            onClick={reconnect}
+            style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}
+            title="Reconnect Session"
+          >
+            ↻ Reconnect
+          </button>
         </div>
       </div>
 
       {error && (
-        <div className="px-3 py-1 bg-red-950/60 border-b border-red-800/40 text-red-300 text-[11px]">
+        <div style={{ padding: "4px 10px", background: "rgba(127,29,29,0.5)", borderBottom: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", fontSize: 11, flexShrink: 0 }}>
           {error}
         </div>
       )}
 
-      {/* Terminal Container */}
-      <div className="flex-1 p-2 overflow-hidden" ref={terminalRef} />
+      {/* Terminal Canvas Container */}
+      <div style={{ flex: 1, padding: "6px", overflow: "hidden", minHeight: 0, background: "#090d16" }} ref={terminalRef} />
     </div>
   );
 }
+
+

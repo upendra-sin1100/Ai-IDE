@@ -21,29 +21,86 @@ class GeminiProvider(LLMProvider):
     def name(self) -> str:
         return "gemini"
 
-    def _base_url(self, model: str | None) -> str:
+    def _check_api_key(self) -> None:
         if not self._settings.gemini_api_key:
-            raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured in backend environment")
-        selected_model = model or self._settings.coding_model
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:streamGenerateContent?alt=sse&key={self._settings.gemini_api_key}"
+            raise HTTPException(
+                status_code=401,
+                detail="GEMINI_API_KEY is not configured. Set GEMINI_API_KEY environment variable."
+            )
 
-    def _non_stream_url(self, model: str | None) -> str:
-        if not self._settings.gemini_api_key:
-            raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured in backend environment")
-        selected_model = model or self._settings.coding_model
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={self._settings.gemini_api_key}"
+    def _get_headers(self) -> dict[str, str]:
+        """Get headers with Gemini API key for authentication."""
+        return {
+            "x-goog-api-key": self._settings.gemini_api_key,
+            "Content-Type": "application/json"
+        }
 
-    async def _post_with_retry(self, url: str, payload: dict[str, object]) -> httpx.Response:
+    def _normalize_api_url(self) -> str:
+        """
+        Normalize the API URL by removing trailing slash.
+        Supports configuration like: https://generativelanguage.googleapis.com/v1beta
+        """
+        base = self._settings.gemini_api_url.rstrip("/")
+        if not base:
+            return "https://generativelanguage.googleapis.com/v1beta"
+        return base
+
+    def _build_url(self, model: str | None, stream: bool = True) -> str:
+        """Build the Gemini API endpoint URL."""
+        self._check_api_key()
+        selected_model = model or self._settings.coding_model
+        base_url = self._normalize_api_url()
+        endpoint = "streamGenerateContent" if stream else "generateContent"
+        alt_param = "?alt=sse" if stream else ""
+        return f"{base_url}/models/{selected_model}:{endpoint}{alt_param}"
+
+    async def _post_with_retry(self, url: str, payload: dict[str, object], stream: bool = False) -> httpx.Response:
+        """
+        Execute POST request to Gemini API with retry logic.
+        """
         backoff = 0.5
         last_error: Exception | None = None
+        
         for attempt in range(2):
             try:
-                response = await self._client.post(url, json=payload, timeout=30.0)
-                if response.status_code >= 400:
+                headers = self._get_headers()
+                
+                if stream:
+                    response = await self._client.post(url, json=payload, headers=headers, timeout=45.0)
+                else:
+                    response = await self._client.post(url, json=payload, headers=headers, timeout=30.0)
+                
+                if response.status_code == 401:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Gemini API authentication failed. Check your GEMINI_API_KEY."
+                    )
+                elif response.status_code == 403:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Gemini API access denied. Check your API key permissions."
+                    )
+                elif response.status_code == 404:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="The selected Gemini model was not found. Check your DEFAULT_MODEL, CODING_MODEL configuration."
+                    )
+                elif response.status_code == 429:
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Gemini API rate limit reached. Please try again later."
+                    )
+                elif response.status_code >= 500:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Gemini API server error ({response.status_code}). Try again later."
+                    )
+                elif response.status_code >= 400:
                     raise HTTPException(
                         status_code=response.status_code,
-                        detail=f"Gemini API returned error: {response.text}"
+                        detail=f"Gemini API error {response.status_code}: {response.text[:200]}"
                     )
+                
                 return response
             except HTTPException:
                 raise
@@ -53,7 +110,11 @@ class GeminiProvider(LLMProvider):
                     break
                 await asyncio.sleep(backoff)
                 backoff *= 2
-        raise HTTPException(status_code=502, detail=f"Gemini API request failed: {str(last_error)}")
+        
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to Gemini API: {str(last_error)}"
+        )
 
     async def astream_chat(
         self, messages: list[dict[str, str]], model: str | None = None
@@ -77,9 +138,13 @@ class GeminiProvider(LLMProvider):
             "contents": gemini_messages,
         }
 
-        url = self._base_url(model)
+        # FIX 1: Use _build_url with stream=True
+        url = self._build_url(model, stream=True)
+        headers = self._get_headers()
+        
         try:
-            async with self._client.stream("POST", url, json=payload, timeout=45.0) as response:
+            # FIX 2: Pass headers to authenticate stream requests
+            async with self._client.stream("POST", url, json=payload, headers=headers, timeout=45.0) as response:
                 if response.status_code >= 400:
                     body = await response.aread()
                     yield {"type": "error", "delta": f"Gemini API Error {response.status_code}: {body.decode(errors='ignore')}"}
@@ -114,7 +179,8 @@ class GeminiProvider(LLMProvider):
             },
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         }
-        url = self._non_stream_url(model)
+        # FIX 3: Use _build_url with stream=False
+        url = self._build_url(model, stream=False)
         response = await self._post_with_retry(url, payload)
         data = response.json()
 
@@ -156,7 +222,8 @@ class GeminiProvider(LLMProvider):
             "contents": [{"role": "user", "parts": [{"text": user_content}]}],
         }
 
-        url = self._non_stream_url(model)
+        # FIX 4: Use _build_url with stream=False
+        url = self._build_url(model, stream=False)
         response = await self._post_with_retry(url, payload)
         data = response.json()
 
@@ -168,7 +235,6 @@ class GeminiProvider(LLMProvider):
             if parts:
                 raw_text = str(parts[0].get("text", ""))
 
-        # Try parsing JSON output from Gemini
         clean_text = raw_text.strip()
         if clean_text.startswith("```"):
             lines = clean_text.split("\n")
@@ -187,7 +253,6 @@ class GeminiProvider(LLMProvider):
                 is_new_file=parsed.get("is_new_file", is_new),
             )
         except Exception:
-            # Fallback if raw text wasn't valid JSON
             return ProposedEdit(
                 file_path=target_path,
                 content=raw_text,
