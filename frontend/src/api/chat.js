@@ -49,7 +49,7 @@ export async function streamChat(messages, model = null, provider = "gemini", on
           } else {
             if (onChunk) onChunk(parsed);
           }
-        } catch (_) {
+        } catch {
           // ignore malformed SSE chunks
         }
       }

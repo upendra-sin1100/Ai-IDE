@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import "./App.css";
@@ -419,7 +419,6 @@ export default function App() {
   const [modelsList, setModelsList] = useState(DEFAULT_MODELS);
   const [selectedModelId, setSelectedModelId] = useState("gemini-1.5-flash");
   const [showModelMenu, setShowModelMenu] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: "" });
   const editorRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -459,7 +458,7 @@ export default function App() {
             }
           }
         }
-      } catch (_) {
+      } catch {
         // Fallback to DEFAULT_MODELS if backend loading fails
       }
     }

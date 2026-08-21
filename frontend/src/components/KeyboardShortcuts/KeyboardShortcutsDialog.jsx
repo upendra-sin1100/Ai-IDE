@@ -1,4 +1,3 @@
-import React from "react";
 
 const SHORTCUTS = [
     { key: "Ctrl + B", description: "Toggle File Explorer Sidebar" },

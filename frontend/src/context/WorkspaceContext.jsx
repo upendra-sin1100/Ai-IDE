@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import * as workspaceApi from "../api/workspace";
-
-const WorkspaceContext = createContext(null);
+import { WorkspaceContext } from "./workspaceHelpers";
 
 export function WorkspaceProvider({ children }) {
   const [tree, setTree] = useState([]);
@@ -26,8 +25,20 @@ export function WorkspaceProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refreshTree();
-  }, [refreshTree]);
+    let isMounted = true;
+    const fetchInitialTree = async () => {
+      try {
+        const data = await workspaceApi.getTree();
+        if (isMounted) setTree(data);
+      } catch (err) {
+        if (isMounted) setError(err.message || "Failed to load workspace tree");
+      }
+    };
+    fetchInitialTree();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const openFile = useCallback(async (path) => {
     if (!path) return;
@@ -181,10 +192,4 @@ export function WorkspaceProvider({ children }) {
       {children}
     </WorkspaceContext.Provider>
   );
-}
-
-export function useWorkspaceContext() {
-  const ctx = useContext(WorkspaceContext);
-  if (!ctx) throw new Error("useWorkspaceContext must be used within WorkspaceProvider");
-  return ctx;
 }

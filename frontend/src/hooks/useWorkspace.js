@@ -1,4 +1,4 @@
-import { useWorkspaceContext } from "../context/WorkspaceContext";
+import { useWorkspaceContext } from "../context/workspaceHelpers";
 
 export function useWorkspace() {
   return useWorkspaceContext();

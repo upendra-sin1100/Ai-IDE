@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminal } from "../../hooks/useTerminal";
 
-export function TerminalPanel({ onClose, runConfig = null, onStop = null }) {
+export function TerminalPanel({ onClose: _onClose, runConfig = null, onStop = null }) {
   const terminalRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -51,7 +51,9 @@ export function TerminalPanel({ onClose, runConfig = null, onStop = null }) {
     setTimeout(() => {
       try {
         fitAddon.fit();
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     }, 50);
 
     term.onData((data) => {
@@ -63,7 +65,9 @@ export function TerminalPanel({ onClose, runConfig = null, onStop = null }) {
         if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientWidth > 0 && terminalRef.current.clientHeight > 0) {
           fitAddonRef.current.fit();
         }
-      } catch (_) {}
+      } catch {
+        /* ignore */
+      }
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -94,7 +98,9 @@ export function TerminalPanel({ onClose, runConfig = null, onStop = null }) {
       setTimeout(() => {
         try {
           fitAddonRef.current.fit();
-        } catch (_) {}
+        } catch {
+        /* ignore */
+      }
       }, 50);
     }
   }, [runConfig]);

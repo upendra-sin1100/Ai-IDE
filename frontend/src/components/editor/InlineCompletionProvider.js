@@ -9,7 +9,7 @@ export function registerInlineCompletionProvider(monaco, getModel, getProvider) 
   }
 
   const provider = {
-    provideInlineCompletions: async (model, position, context, token) => {
+    provideInlineCompletions: async (model, position) => {
       const textUntilPosition = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,
@@ -53,7 +53,7 @@ export function registerInlineCompletionProvider(monaco, getModel, getProvider) 
             },
           ],
         };
-      } catch (err) {
+      } catch {
         return { items: [] };
       }
     },

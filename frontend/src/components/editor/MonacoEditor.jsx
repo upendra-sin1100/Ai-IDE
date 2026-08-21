@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { useWorkspace } from "../../hooks/useWorkspace";
-import { useModel } from "../../context/ModelContext";
+import { useModel } from "../../context/modelConstants";
 import { registerInlineCompletionProvider } from "./InlineCompletionProvider";
 import { X, Save, FileCode } from "lucide-react";
 
@@ -23,8 +23,11 @@ export function MonacoEditor() {
 
   const modelRef = useRef(model);
   const providerRef = useRef(provider);
-  modelRef.current = model;
-  providerRef.current = provider;
+
+  useEffect(() => {
+    modelRef.current = model;
+    providerRef.current = provider;
+  }, [model, provider]);
 
   const currentContent = activeFilePath ? fileContents[activeFilePath] ?? "" : "";
   const isDirty = activeFilePath ? dirtyFiles[activeFilePath] : false;

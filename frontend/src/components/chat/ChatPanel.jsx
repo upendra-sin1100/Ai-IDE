@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useChatStream } from "../../hooks/useChatStream";
 
 export function ChatPanel({ activeFile = { filename: "App.jsx", content: "// Workspace content" } }) {

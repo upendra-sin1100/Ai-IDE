@@ -1,18 +1,11 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 
 export function SettingsPanel({ onClose }) {
-    const [geminiKey, setGeminiKey] = useState("");
-    const [groqKey, setGroqKey] = useState("");
-    const [wordWrap, setWordWrap] = useState(true);
-    const [minimap, setMinimap] = useState(true);
+    const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("ai-ide-gemini-key") || "");
+    const [groqKey, setGroqKey] = useState(() => localStorage.getItem("ai-ide-groq-key") || "");
+    const [wordWrap, setWordWrap] = useState(() => localStorage.getItem("ai-ide-editor-wordwrap") !== "false");
+    const [minimap, setMinimap] = useState(() => localStorage.getItem("ai-ide-editor-minimap") !== "false");
     const [savedSuccess, setSavedSuccess] = useState(false);
-
-    useEffect(() => {
-        setGeminiKey(localStorage.getItem("ai-ide-gemini-key") || "");
-        setGroqKey(localStorage.getItem("ai-ide-groq-key") || "");
-        setWordWrap(localStorage.getItem("ai-ide-editor-wordwrap") !== "false");
-        setMinimap(localStorage.getItem("ai-ide-editor-minimap") !== "false");
-    }, []);
 
     const handleSave = () => {
         localStorage.setItem("ai-ide-gemini-key", geminiKey);

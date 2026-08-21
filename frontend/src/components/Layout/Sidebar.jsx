@@ -1,4 +1,3 @@
-import React from "react";
 import { SettingsPanel } from "../Settings/SettingsPanel";
 
 export function Sidebar({ activeTab, onTabChange, showSettings, onSettingsClose }) {

@@ -1,4 +1,4 @@
-import { useModel } from "../context/ModelContext";
+import { useModel } from "../context/modelConstants";
 import { Cpu } from "lucide-react";
 
 export function ModelSelector() {

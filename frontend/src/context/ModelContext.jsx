@@ -1,7 +1,6 @@
-import { createContext, useContext, useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { requestJson } from "../api/client";
-
-const ModelContext = createContext(null);
+import { ModelContext } from "./modelConstants";
 
 export function ModelProvider({ children }) {
   const [selectedModel, setSelectedModel] = useState("gemini-1.5-flash");
@@ -24,7 +23,7 @@ export function ModelProvider({ children }) {
             setSelectedProvider(data.default_provider);
           }
         }
-      } catch (_) {
+      } catch {
         // Fallback to default Gemini models
       }
     }
@@ -43,12 +42,4 @@ export function ModelProvider({ children }) {
   );
 
   return <ModelContext.Provider value={value}>{children}</ModelContext.Provider>;
-}
-
-export function useModel() {
-  const context = useContext(ModelContext);
-  if (!context) {
-    throw new Error("useModel must be used within a ModelProvider");
-  }
-  return context;
 }

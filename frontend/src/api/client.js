@@ -20,7 +20,7 @@ export async function requestJson(endpoint, options = {}) {
       if (errorData.detail) {
         errorMsg = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
       }
-    } catch (_) {
+    } catch {
       // Keep default statusText if JSON body fails
     }
     throw new Error(errorMsg);
