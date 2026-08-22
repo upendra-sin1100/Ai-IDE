@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except AttributeError:
+        pass
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.completion import router as completion_router

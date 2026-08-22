@@ -414,6 +414,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("files");
   const [activeFile, setActiveFile] = useState("index.js");
   const [isTyping, setIsTyping] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [modelsList, setModelsList] = useState(DEFAULT_MODELS);
@@ -662,13 +663,18 @@ export default function App() {
       return;
     }
 
-    // Trigger live interactive WebSocket session
-    setActiveRunConfig({
-      language: runLanguage,
-      code,
-      fileName: activeFile,
-      runId: Date.now(),
-    });
+    setIsRunning(true);
+    try {
+      // Trigger live interactive WebSocket session
+      setActiveRunConfig({
+        language: runLanguage,
+        code,
+        fileName: activeFile,
+        runId: Date.now(),
+      });
+    } finally {
+      setTimeout(() => setIsRunning(false), 250);
+    }
   };
 
   const handleKeyDown = e => {

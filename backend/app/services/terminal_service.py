@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -9,44 +10,62 @@ from typing import Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
 
+async def _start_subprocess(command: list[str], *, cwd: str, env: Optional[dict[str, str]] = None) -> subprocess.Popen[bytes] | asyncio.subprocess.Process:
+    try:
+        return await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=cwd,
+            env=env,
+        )
+    except NotImplementedError:
+        if sys.platform != "win32":
+            raise
+        return await asyncio.to_thread(
+            lambda: subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                cwd=cwd,
+                env=env,
+            )
+        )
+
+
 class TerminalSession:
     def __init__(self, workspace_dir: str) -> None:
         self.workspace_dir = workspace_dir
-        self.process: Optional[asyncio.subprocess.Process] = None
+        self.process: Optional[subprocess.Popen[bytes] | asyncio.subprocess.Process] = None
 
     async def start(self) -> None:
         shell = "powershell.exe" if sys.platform == "win32" else os.getenv("SHELL", "/bin/bash")
         cwd = self.workspace_dir if os.path.exists(self.workspace_dir) else os.getcwd()
 
         try:
-            self.process = await asyncio.create_subprocess_exec(
-                shell,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=cwd,
-            )
+            self.process = await _start_subprocess([shell], cwd=cwd)
         except Exception as exc:
             # Fallback for Windows if powershell is missing
             if sys.platform == "win32":
-                self.process = await asyncio.create_subprocess_exec(
-                    "cmd.exe",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    cwd=cwd,
-                )
+                self.process = await _start_subprocess(["cmd.exe"], cwd=cwd)
             else:
                 raise exc
 
     async def read_output(self, websocket: WebSocket) -> None:
-        if not self.process or not self.process.stdout:
+        if not self.process or not getattr(self.process, "stdout", None):
             return
 
-        while self.process.returncode is None:
+        while True:
             try:
-                # Read chunks of data
-                data = await self.process.stdout.read(1024)
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    should_continue = self.process.returncode is None
+                    if not should_continue:
+                        break
+                    data = await self.process.stdout.read(1024)
+                else:
+                    data = await asyncio.to_thread(self.process.stdout.read, 1024)
                 if not data:
                     break
                 text = data.decode("utf-8", errors="replace")
@@ -55,10 +74,15 @@ class TerminalSession:
                 break
 
     async def write_input(self, data: str) -> None:
-        if self.process and self.process.stdin:
+        if self.process and getattr(self.process, "stdin", None):
             try:
-                self.process.stdin.write(data.encode("utf-8"))
-                await self.process.stdin.drain()
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    self.process.stdin.write(data.encode("utf-8"))
+                    await self.process.stdin.drain()
+                else:
+                    payload = data.encode("utf-8")
+                    await asyncio.to_thread(self.process.stdin.write, payload)
+                    await asyncio.to_thread(self.process.stdin.flush)
             except Exception:
                 pass
 
@@ -121,14 +145,7 @@ class InteractiveRunSession:
                 f.write(self.code)
 
             cmd = [python_bin, "-u", target_path]
-            self.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env=env,
-                cwd=self.temp_dir,
-            )
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir, env=env)
             return f"Executing {target_name} (Python)..."
 
         # --- JAVASCRIPT ---
@@ -138,13 +155,7 @@ class InteractiveRunSession:
                 f.write(self.code)
 
             cmd = ["node", target_path]
-            self.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=self.temp_dir,
-            )
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
             return f"Executing {self.file_name} (Node.js)..."
 
         # --- TYPESCRIPT ---
@@ -155,22 +166,10 @@ class InteractiveRunSession:
 
             cmd = ["npx", "ts-node", "--transpile-only", target_path] if sys.platform != "win32" else ["npx.cmd", "ts-node", "--transpile-only", target_path]
             try:
-                self.process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    cwd=self.temp_dir,
-                )
+                self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
             except Exception:
                 cmd = ["node", target_path]
-                self.process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    cwd=self.temp_dir,
-                )
+                self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
             return f"Executing {self.file_name} (TypeScript)..."
 
         # --- JAVA ---
@@ -185,53 +184,48 @@ class InteractiveRunSession:
                 f.write(self.code)
 
             # Compile step
-            compile_proc = await asyncio.create_subprocess_exec(
-                "javac", f"{class_name}.java",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=self.temp_dir,
-            )
+            compile_proc = await _start_subprocess(["javac", f"{class_name}.java"], cwd=self.temp_dir)
             stdout, _ = await compile_proc.communicate()
             if compile_proc.returncode != 0:
                 raise RuntimeError(f"Compilation Error:\r\n{stdout.decode('utf-8', errors='replace')}")
 
             # Run step
             cmd = ["java", "-Dfile.encoding=UTF-8", class_name]
-            self.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=self.temp_dir,
-            )
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
             return f"Executing {class_name}.java (Java)..."
 
         else:
             raise ValueError(f"Unsupported language: {self.language}")
 
     async def read_output(self, websocket: WebSocket) -> None:
-        if not self.process or not self.process.stdout:
+        if not self.process or not getattr(self.process, "stdout", None):
             return
 
         try:
             while True:
-                # Wakes up immediately on the first available byte
-                data = await self.process.stdout.read(1)
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    data = await self.process.stdout.read(1)
+                else:
+                    data = await asyncio.to_thread(self.process.stdout.read, 1)
                 if not data:
                     break
-                # Drain any remaining bytes in stream buffer
+
                 try:
-                    if hasattr(self.process.stdout, "_buffer") and self.process.stdout._buffer:
-                        more = await self.process.stdout.read(len(self.process.stdout._buffer))
-                        data += more
+                    if not isinstance(self.process, asyncio.subprocess.Process):
+                        buffered = await asyncio.to_thread(self.process.stdout.read, 0)
+                        if buffered:
+                            data += buffered
                 except Exception:
                     pass
 
                 text = data.decode("utf-8", errors="replace")
                 text_xterm = text.replace("\r\n", "\n").replace("\n", "\r\n")
                 await websocket.send_text(text_xterm)
-            
-            await self.process.wait()
+
+            if isinstance(self.process, asyncio.subprocess.Process):
+                await self.process.wait()
+            else:
+                await asyncio.to_thread(self.process.wait)
             ret = self.process.returncode
             color = "32" if ret == 0 else "31"
             await websocket.send_text(f"\r\n\x1b[{color}m[Process finished with exit code {ret}]\x1b[0m\r\n")
@@ -239,14 +233,17 @@ class InteractiveRunSession:
             pass
 
     async def write_input(self, websocket: WebSocket, data: str) -> None:
-        if self.process and self.process.stdin:
+        if self.process and getattr(self.process, "stdin", None):
             try:
-                # Replace carriage returns from xterm.js (\r) with newline (\n) for process stdin pipe
-                pipe_data = data.replace("\r", "\n")
-                self.process.stdin.write(pipe_data.encode("utf-8"))
-                await self.process.stdin.drain()
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    pipe_data = data.replace("\r", "\n")
+                    self.process.stdin.write(pipe_data.encode("utf-8"))
+                    await self.process.stdin.drain()
+                else:
+                    pipe_data = data.replace("\r", "\n").encode("utf-8")
+                    await asyncio.to_thread(self.process.stdin.write, pipe_data)
+                    await asyncio.to_thread(self.process.stdin.flush)
 
-                # Echo typed input back to xterm.js terminal canvas so user visually sees what they type
                 echo_text = data.replace("\r", "\r\n")
                 if data in ["\x7f", "\b"]:
                     echo_text = "\b \b"

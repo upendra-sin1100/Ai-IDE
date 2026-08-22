@@ -7,3 +7,7 @@ name = "ai-ide-backend"
 version = "0.1.0"
 description = "Layered FastAPI backend for AI IDE"
 requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
