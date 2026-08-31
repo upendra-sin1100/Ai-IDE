@@ -89,7 +89,15 @@ class TerminalSession:
     def stop(self) -> None:
         if self.process:
             try:
-                self.process.terminate()
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    if self.process.stdin:
+                        self.process.stdin.close()
+                    if self.process.returncode is None:
+                        self.process.terminate()
+                else:
+                    if getattr(self.process, "stdin", None):
+                        self.process.stdin.close()
+                    self.process.terminate()
             except Exception:
                 pass
 
@@ -204,19 +212,11 @@ class InteractiveRunSession:
         try:
             while True:
                 if isinstance(self.process, asyncio.subprocess.Process):
-                    data = await self.process.stdout.read(1)
+                    data = await self.process.stdout.read(1024)
                 else:
-                    data = await asyncio.to_thread(self.process.stdout.read, 1)
+                    data = await asyncio.to_thread(self.process.stdout.read, 1024)
                 if not data:
                     break
-
-                try:
-                    if not isinstance(self.process, asyncio.subprocess.Process):
-                        buffered = await asyncio.to_thread(self.process.stdout.read, 0)
-                        if buffered:
-                            data += buffered
-                except Exception:
-                    pass
 
                 text = data.decode("utf-8", errors="replace")
                 text_xterm = text.replace("\r\n", "\n").replace("\n", "\r\n")
@@ -254,7 +254,15 @@ class InteractiveRunSession:
     def stop(self) -> None:
         if self.process:
             try:
-                self.process.terminate()
+                if isinstance(self.process, asyncio.subprocess.Process):
+                    if self.process.stdin:
+                        self.process.stdin.close()
+                    if self.process.returncode is None:
+                        self.process.terminate()
+                else:
+                    if getattr(self.process, "stdin", None):
+                        self.process.stdin.close()
+                    self.process.terminate()
             except Exception:
                 pass
         if self.temp_dir:

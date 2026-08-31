@@ -5,8 +5,6 @@ export function useTerminal(onData, runConfig = null) {
   const [error, setError] = useState(null);
   const wsRef = useRef(null);
 
-  const runConfigKey = runConfig ? JSON.stringify(runConfig) : null;
-
   const connect = useCallback(() => {
     wsRef.current?.close();
 
@@ -39,7 +37,7 @@ export function useTerminal(onData, runConfig = null) {
     };
 
     wsRef.current = ws;
-  }, [onData, runConfigKey]);
+  }, [onData, runConfig]);
 
   useEffect(() => {
     connect();

@@ -3,19 +3,14 @@ import Editor from "@monaco-editor/react";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import "./App.css";
 
-const INITIAL_CODE = `// Welcome to AI IDE Pro
-// Start coding and let AI assist you
+const INITIAL_CODE = `# Welcome to AI IDE Pro
+# Start coding in Python!
 
-function fibonacci(n) {
-  if (n <= 1) return n;
-  return fibonacci(n - 1) + fibonacci(n - 2);
-}
+def main():
+    print("Hello from hello.py!")
 
-// Generate first 10 fibonacci numbers
-const sequence = Array.from({ length: 10 }, (_, i) => fibonacci(i));
-console.log("Fibonacci:", sequence);
-
-export default fibonacci;
+if __name__ == "__main__":
+    main()
 `;
 
 const MESSAGES = [
@@ -24,16 +19,12 @@ const MESSAGES = [
     thinking:
       "Analyzing workspace... Gemini AI copilot ready. Ready to process code and provide optimized solutions.",
     content:
-      "Hello! I'm your AI copilot powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\nUse the **Run** button up top to execute your code — output shows up in the terminal drawer below the editor.\n\n```js\n// Try optimized iterative fibonacci:\nfunction fibonacciFast(n) {\n  let a = 0, b = 1;\n  for (let i = 0; i < n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return a;\n}\n```",
+      "Hello! I'm your AI copilot powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\nUse the **Run** button up top to execute your code — output shows up in the terminal drawer below the editor.\n\n```python\n# Try running this Python code:\ndef greet(name):\n    return f'Hello, {name}!'\n\nprint(greet('Developer'))\n```",
   },
 ];
 
 const INITIAL_FILES = [
-  { name: "index.js", lang: "JS", color: "#f0db4f" },
-  { name: "utils.ts", lang: "TS", color: "#3178c6" },
-  { name: "Main.java", lang: "JAVA", color: "#b07219" },
-  { name: "styles.css", lang: "CSS", color: "#264de4" },
-  { name: "README.md", lang: "MD", color: "#83a598" },
+  { name: "hello.py", lang: "PY", color: "#3572A5" },
 ];
 
 const SUGGESTIONS = ["Optimize code", "Add TS types", "Write tests", "Explain this", "Add function"];
@@ -373,11 +364,7 @@ function Toast({ message, visible }) {
 export default function App() {
   const [files, setFiles] = useState(INITIAL_FILES);
   const [fileContents, setFileContents] = useState({
-    "index.js": INITIAL_CODE,
-    "utils.ts": `export function add(a: number, b: number): number {\n  return a + b;\n}`,
-    "Main.java": `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java in AI IDE Pro!");\n    }\n}`,
-    "styles.css": `/* Live CSS Preview Demo */\n.card {\n  background: linear-gradient(135deg, #1e1b4b, #312e81);\n  color: #f8fafc;\n  padding: 24px;\n  border-radius: 12px;\n  border: 1px solid #6366f1;\n  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);\n}\n.title {\n  color: #a5b4fc;\n  font-size: 18px;\n  font-weight: bold;\n  margin-bottom: 8px;\n}\n.btn {\n  background: #4f46e5;\n  color: white;\n  padding: 8px 16px;\n  border-radius: 6px;\n  border: none;\n  cursor: pointer;\n  font-weight: 600;\n  margin-top: 12px;\n}\n.btn:hover {\n  background: #6366f1;\n}`,
-    "README.md": `# AI IDE Pro\n\nNext generation AI coding workspace.`,
+    "hello.py": INITIAL_CODE,
   });
 
   // Resizable AI Copilot Chat panel width
@@ -412,7 +399,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState(MESSAGES);
   const [activeTab, setActiveTab] = useState("files");
-  const [activeFile, setActiveFile] = useState("index.js");
+  const [activeFile, setActiveFile] = useState("hello.py");
   const [isTyping, setIsTyping] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -546,9 +533,9 @@ export default function App() {
     showToast("Editor content replaced ✓");
   }, [setCode]);
 
-  /* ── streaming send ── */
   const handleSend = async (text) => {
-    const msg = (text ?? input).trim();
+    const rawText = typeof text === "string" ? text : input;
+    const msg = (rawText || "").trim();
     if (!msg) return;
     const newMessages = [...messages, { role: "user", content: msg }];
     setMessages(newMessages);

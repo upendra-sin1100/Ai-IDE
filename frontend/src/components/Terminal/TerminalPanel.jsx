@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminal } from "../../hooks/useTerminal";
 
-export function TerminalPanel({ onClose: _onClose, runConfig = null, onStop = null }) {
+export function TerminalPanel({ onClose = null, runConfig = null, onStop = null }) {
   const terminalRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -135,6 +135,15 @@ export function TerminalPanel({ onClose: _onClose, runConfig = null, onStop = nu
           >
             ↻ Reconnect
           </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}
+              title="Close Terminal"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
