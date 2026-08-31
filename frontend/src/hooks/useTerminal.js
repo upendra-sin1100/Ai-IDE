@@ -9,9 +9,11 @@ export function useTerminal(onData, runConfig = null) {
     wsRef.current?.close();
 
     const isRun = Boolean(runConfig);
+    const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
+    const wsUrl = apiUrl.replace(/^http/, "ws");
     const endpoint = isRun
-      ? "ws://127.0.0.1:8000/api/terminal/run_ws"
-      : "ws://127.0.0.1:8000/api/terminal/ws";
+      ? `${wsUrl}/terminal/run_ws`
+      : `${wsUrl}/terminal/ws`;
 
     const ws = new WebSocket(endpoint);
 
