@@ -1,12 +1,19 @@
+import { getSupabaseAuthHeaders } from '../lib/supabase';
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+
+export async function getAuthHeaders(extraHeaders = {}) {
+  const authHeaders = await getSupabaseAuthHeaders();
+  return {
+    "Content-Type": "application/json",
+    ...authHeaders,
+    ...extraHeaders,
+  };
+}
 
 export async function requestJson(endpoint, options = {}) {
   const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
-
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
+  const headers = await getAuthHeaders(options.headers || {});
 
   const response = await fetch(url, {
     ...options,

@@ -122,12 +122,61 @@ async def handle_terminal_websocket(websocket: WebSocket, workspace_dir: str) ->
         session.stop()
 
 
+EXTENSION_TO_LANGUAGE = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".cc": "cpp",
+    ".go": "go",
+    ".rs": "rust",
+    ".php": "php",
+    ".rb": "ruby",
+    ".sh": "shell",
+    ".bash": "shell",
+}
+
+
+def resolve_language(language: Optional[str] = None, file_name: str = "main.py") -> str:
+    """
+    Resolves execution language.
+    `language` remains an optional override.
+    If `language` is not provided, infers language from file extension of `file_name`.
+    If extension is unsupported or missing, raises ValueError.
+    """
+    if language and language.strip():
+        return language.strip().lower()
+
+    if not file_name:
+        raise ValueError("Either 'language' or 'file_name' with a valid extension must be provided.")
+
+    ext = Path(file_name).suffix.lower()
+    if not ext:
+        raise ValueError(f"File '{file_name}' has no file extension to infer language from.")
+
+    if ext in EXTENSION_TO_LANGUAGE:
+        return EXTENSION_TO_LANGUAGE[ext]
+
+    raise ValueError(f"Unsupported file extension '{ext}' for automatic language detection in file '{file_name}'.")
+
+
 class InteractiveRunSession:
-    def __init__(self, workspace_dir: str, language: str, code: str, file_name: str = "main.py") -> None:
+    def __init__(
+        self,
+        workspace_dir: str,
+        language: Optional[str] = None,
+        code: str = "",
+        file_name: str = "main.py",
+    ) -> None:
         self.workspace_dir = workspace_dir
-        self.language = language.lower().strip()
         self.code = code
         self.file_name = file_name
+        self.language = resolve_language(language=language, file_name=file_name)
         self.process: Optional[asyncio.subprocess.Process] = None
         self.temp_dir: Optional[str] = None
 
@@ -201,6 +250,92 @@ class InteractiveRunSession:
             cmd = ["java", "-Dfile.encoding=UTF-8", class_name]
             self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
             return f"Executing {class_name}.java (Java)..."
+
+        # --- C ---
+        elif self.language in ["c"]:
+            c_file = os.path.join(self.temp_dir, "program.c")
+            out_bin = os.path.join(self.temp_dir, "program.exe" if sys.platform == "win32" else "program")
+            with open(c_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            compile_proc = await _start_subprocess(["gcc", c_file, "-o", out_bin], cwd=self.temp_dir)
+            stdout, _ = await compile_proc.communicate()
+            if compile_proc.returncode != 0:
+                raise RuntimeError(f"C Compilation Error:\r\n{stdout.decode('utf-8', errors='replace')}")
+
+            self.process = await _start_subprocess([out_bin], cwd=self.temp_dir)
+            return f"Executing {self.file_name} (C)..."
+
+        # --- C++ ---
+        elif self.language in ["cpp", "cxx"]:
+            cpp_file = os.path.join(self.temp_dir, "program.cpp")
+            out_bin = os.path.join(self.temp_dir, "program.exe" if sys.platform == "win32" else "program")
+            with open(cpp_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            compile_proc = await _start_subprocess(["g++", cpp_file, "-o", out_bin], cwd=self.temp_dir)
+            stdout, _ = await compile_proc.communicate()
+            if compile_proc.returncode != 0:
+                raise RuntimeError(f"C++ Compilation Error:\r\n{stdout.decode('utf-8', errors='replace')}")
+
+            self.process = await _start_subprocess([out_bin], cwd=self.temp_dir)
+            return f"Executing {self.file_name} (C++)..."
+
+        # --- GO ---
+        elif self.language in ["go"]:
+            go_file = os.path.join(self.temp_dir, "main.go")
+            with open(go_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            cmd = ["go", "run", go_file]
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
+            return f"Executing {self.file_name} (Go)..."
+
+        # --- RUST ---
+        elif self.language in ["rust", "rs"]:
+            rs_file = os.path.join(self.temp_dir, "main.rs")
+            out_bin = os.path.join(self.temp_dir, "main.exe" if sys.platform == "win32" else "main")
+            with open(rs_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            compile_proc = await _start_subprocess(["rustc", rs_file, "-o", out_bin], cwd=self.temp_dir)
+            stdout, _ = await compile_proc.communicate()
+            if compile_proc.returncode != 0:
+                raise RuntimeError(f"Rust Compilation Error:\r\n{stdout.decode('utf-8', errors='replace')}")
+
+            self.process = await _start_subprocess([out_bin], cwd=self.temp_dir)
+            return f"Executing {self.file_name} (Rust)..."
+
+        # --- PHP ---
+        elif self.language in ["php"]:
+            php_file = os.path.join(self.temp_dir, "script.php")
+            with open(php_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            cmd = ["php", php_file]
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
+            return f"Executing {self.file_name} (PHP)..."
+
+        # --- RUBY ---
+        elif self.language in ["ruby", "rb"]:
+            rb_file = os.path.join(self.temp_dir, "script.rb")
+            with open(rb_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            cmd = ["ruby", rb_file]
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
+            return f"Executing {self.file_name} (Ruby)..."
+
+        # --- SHELL ---
+        elif self.language in ["shell", "sh", "bash"]:
+            sh_file = os.path.join(self.temp_dir, "script.sh")
+            with open(sh_file, "w", encoding="utf-8") as f:
+                f.write(self.code)
+
+            sh_bin = "bash" if sys.platform != "win32" else "sh"
+            cmd = [sh_bin, sh_file]
+            self.process = await _start_subprocess(cmd, cwd=self.temp_dir)
+            return f"Executing {self.file_name} (Shell)..."
 
         else:
             raise ValueError(f"Unsupported language: {self.language}")
@@ -281,11 +416,16 @@ async def handle_interactive_run_websocket(websocket: WebSocket, workspace_dir: 
 
     try:
         init_data = await websocket.receive_json()
-        language = init_data.get("language", "python")
-        code = init_data.get("code", "")
-        file_name = init_data.get("fileName", "main.py")
+        language = init_data.get("language")
+        code = init_data.get("content") if "content" in init_data else init_data.get("code", "")
+        file_name = init_data.get("fileName", init_data.get("file_name", "main.py"))
 
-        session = InteractiveRunSession(workspace_dir, language, code, file_name)
+        session = InteractiveRunSession(
+            workspace_dir=workspace_dir,
+            language=language,
+            code=code,
+            file_name=file_name,
+        )
         start_msg = await session.start()
         await websocket.send_text(f"\r\n\x1b[36m$ {start_msg}\x1b[0m\r\n\r\n")
 

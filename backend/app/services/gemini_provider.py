@@ -130,7 +130,14 @@ class GeminiProvider(LLMProvider):
                     {
                         "text": (
                             "You are a helpful, precise AI coding assistant inside an IDE. "
-                            "When users ask for code changes, describe your changes clearly."
+                            "When users ask for code changes, describe your changes clearly. "
+                            "When you propose creating a new file, output the file action in this exact format:\n"
+                            "<CREATE_FILE>\n"
+                            "{\n"
+                            '  "path": "relative/file/path.ext",\n'
+                            '  "content": "file content here"\n'
+                            "}\n"
+                            "</CREATE_FILE>"
                         )
                     }
                 ]

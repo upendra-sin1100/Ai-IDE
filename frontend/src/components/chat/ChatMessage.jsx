@@ -10,21 +10,25 @@ export function ChatMessage({ message }) {
   const [copied, setCopied] = useState(false);
 
   const isAssistant = message.role === "assistant";
-  const edit = message.proposedEdit;
+  const edits = Array.isArray(message.proposedEdits)
+    ? message.proposedEdits
+    : message.proposedEdit
+    ? [message.proposedEdit]
+    : [];
 
-  const handleAccept = async () => {
-    if (!edit) return;
-    await acceptProposedEdit(edit);
-    setApplied(true);
+  const handleAccept = async (editItem) => {
+    if (!editItem) return;
+    await acceptProposedEdit(editItem);
+    setApplied((prev) => ({ ...prev, [editItem.file_path]: true }));
   };
 
-  const handleReject = () => {
-    setRejected(true);
+  const handleReject = (editItem) => {
+    setRejected((prev) => ({ ...prev, [editItem.file_path]: true }));
   };
 
-  const handleCopy = () => {
-    if (!edit) return;
-    navigator.clipboard.writeText(edit.content);
+  const handleCopy = (content) => {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -46,66 +50,62 @@ export function ChatMessage({ message }) {
         <ReactMarkdown>{message.content}</ReactMarkdown>
       </div>
 
-      {/* Proposed Edit Card */}
-      {edit && !rejected && (
-        <div className="mt-2 border border-slate-700/80 bg-slate-950 rounded-lg overflow-hidden font-mono">
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-[11px]">
-            <div className="flex items-center gap-1.5 font-semibold text-slate-200">
-              {edit.is_new_file ? (
-                <>
-                  <FilePlus size={14} className="text-emerald-400" />
-                  <span className="text-emerald-300">[New File] {edit.file_path}</span>
-                </>
+      {/* Proposed Edit / Create File Cards */}
+      {edits.map((edit, idx) => {
+        if (!edit || rejected[edit.file_path]) return null;
+        const isFileApplied = Boolean(applied[edit.file_path]);
+
+        return (
+          <div key={idx} className="mt-2 border border-slate-700/80 bg-slate-950 rounded-lg overflow-hidden font-mono">
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-[11px]">
+              <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                <FilePlus size={14} className="text-emerald-400" />
+                <span className="text-emerald-300">Create file: {edit.file_path}</span>
+              </div>
+
+              <button
+                onClick={() => handleCopy(edit.content)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]"
+              >
+                {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                <span>{copied ? "Copied" : "Copy"}</span>
+              </button>
+            </div>
+
+            {/* Preview snippet */}
+            <div className="p-3 text-[11px] bg-slate-950 max-h-48 overflow-y-auto text-slate-300 whitespace-pre">
+              {edit.diff || edit.content}
+            </div>
+
+            {/* Accept / Reject controls */}
+            <div className="flex items-center justify-end gap-2 px-3 py-2 bg-slate-900/80 border-t border-slate-800">
+              {isFileApplied ? (
+                <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                  <Check size={13} />
+                  File created & saved!
+                </span>
               ) : (
                 <>
-                  <FileEdit size={14} className="text-amber-400" />
-                  <span className="text-amber-300">[Proposed Edit] {edit.file_path}</span>
+                  <button
+                    onClick={() => handleReject(edit)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition-colors"
+                  >
+                    <X size={12} />
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => handleAccept(edit)}
+                    className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors shadow-sm"
+                  >
+                    <Check size={13} />
+                    Accept
+                  </button>
                 </>
               )}
             </div>
-
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]"
-            >
-              {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-              <span>{copied ? "Copied" : "Copy"}</span>
-            </button>
           </div>
-
-          {/* Preview snippet */}
-          <div className="p-3 text-[11px] bg-slate-950 max-h-48 overflow-y-auto text-slate-300 whitespace-pre">
-            {edit.diff || edit.content}
-          </div>
-
-          {/* Accept / Reject controls */}
-          <div className="flex items-center justify-end gap-2 px-3 py-2 bg-slate-900/80 border-t border-slate-800">
-            {applied ? (
-              <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                <Check size={13} />
-                Applied to disk!
-              </span>
-            ) : (
-              <>
-                <button
-                  onClick={handleReject}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition-colors"
-                >
-                  <X size={12} />
-                  Reject
-                </button>
-                <button
-                  onClick={handleAccept}
-                  className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors shadow-sm"
-                >
-                  <Check size={13} />
-                  Accept & Write
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }

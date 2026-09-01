@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
+import { getAuthHeaders } from "./api/client";
+import { useAuth } from "./context/AuthContext";
+import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import "./App.css";
 
@@ -362,6 +365,7 @@ function Toast({ message, visible }) {
 
 /* ── main component ── */
 export default function App() {
+  const { user, session, loading, signOut } = useAuth();
   const [files, setFiles] = useState(INITIAL_FILES);
   const [fileContents, setFileContents] = useState({
     "hello.py": INITIAL_CODE,
@@ -400,6 +404,7 @@ export default function App() {
   const [messages, setMessages] = useState(MESSAGES);
   const [activeTab, setActiveTab] = useState("files");
   const [activeFile, setActiveFile] = useState("hello.py");
+  const [openTabs, setOpenTabs] = useState(["hello.py"]);
   const [isTyping, setIsTyping] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -430,7 +435,8 @@ export default function App() {
   useEffect(() => {
     async function loadModels() {
       try {
-        const res = await fetch(`${apiBaseUrl}/api/models`);
+        const headers = await getAuthHeaders();
+        const res = await fetch(`${apiBaseUrl}/api/models`, { headers });
         if (res.ok) {
           const data = await res.json();
           if (data.models && data.models.length > 0) {
@@ -533,6 +539,82 @@ export default function App() {
     showToast("Editor content replaced ✓");
   }, [setCode]);
 
+  // ── Multi-file context helper ──
+  const getOpenAndRelatedFiles = useCallback(() => {
+    const openList = [];
+    const openSet = new Set();
+
+    if (activeFile) {
+      openList.push({ path: activeFile, content: fileContents[activeFile] || "" });
+      openSet.add(activeFile);
+    }
+
+    openTabs.forEach((tabPath) => {
+      if (!openSet.has(tabPath)) {
+        openList.push({ path: tabPath, content: fileContents[tabPath] || "" });
+        openSet.add(tabPath);
+      }
+    });
+
+    if (activeFile && fileContents[activeFile]) {
+      const activeContent = fileContents[activeFile];
+      const activeDir = activeFile.includes("/") ? activeFile.substring(0, activeFile.lastIndexOf("/")) : "";
+      const isJsTs = /\.(js|jsx|ts|tsx)$/i.test(activeFile);
+      const isPy = /\.py$/i.test(activeFile);
+      let relatedAdded = 0;
+
+      if (isJsTs) {
+        const importRegex = /(?:import\s+[\s\S]*?\s+from\s+['"]|import\s+['"]|require\(['"])(\.[\w/.-]+)['"]/g;
+        let match;
+        const extensions = ["", ".js", ".jsx", ".ts", ".tsx", ".css", ".json"];
+
+        while ((match = importRegex.exec(activeContent)) !== null && relatedAdded < 2) {
+          const relImport = match[1];
+          const combined = activeDir ? `${activeDir}/${relImport}` : relImport;
+          const parts = combined.split("/");
+          const stack = [];
+          for (const part of parts) {
+            if (part === "." || part === "") continue;
+            if (part === "..") {
+              if (stack.length > 0) stack.pop();
+            } else {
+              stack.push(part);
+            }
+          }
+          const normPath = stack.join("/");
+
+          for (const ext of extensions) {
+            const cand = normPath.endsWith(ext) ? normPath : normPath + ext;
+            if (fileContents[cand] !== undefined && !openSet.has(cand)) {
+              openList.push({ path: cand, content: fileContents[cand] });
+              openSet.add(cand);
+              relatedAdded++;
+              break;
+            }
+          }
+        }
+      } else if (isPy) {
+        const pyRegex = /(?:from\s+([a-zA-Z0-9_.]+)\s+import|import\s+([a-zA-Z0-9_.]+))/g;
+        let match;
+        while ((match = pyRegex.exec(activeContent)) !== null && relatedAdded < 2) {
+          const mod = match[1] || match[2];
+          if (!mod) continue;
+          const pyPath = mod.replace(/\./g, "/") + ".py";
+          const relPyPath = activeDir ? `${activeDir}/${pyPath}` : pyPath;
+
+          const cand = fileContents[pyPath] !== undefined ? pyPath : (fileContents[relPyPath] !== undefined ? relPyPath : null);
+          if (cand && !openSet.has(cand)) {
+            openList.push({ path: cand, content: fileContents[cand] });
+            openSet.add(cand);
+            relatedAdded++;
+          }
+        }
+      }
+    }
+
+    return openList;
+  }, [activeFile, openTabs, fileContents]);
+
   const handleSend = async (text) => {
     const rawText = typeof text === "string" ? text : input;
     const msg = (rawText || "").trim();
@@ -543,15 +625,19 @@ export default function App() {
     setIsTyping(true);
 
     const activeModelObj = modelsList.find(m => m.id === selectedModelId) || modelsList[0];
+    const openFilesContext = getOpenAndRelatedFiles();
 
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(`${apiBaseUrl}/api/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           model: activeModelObj.id,
           provider: activeModelObj.provider || "gemini",
+          open_files: openFilesContext,
+          active_file: activeFile,
         }),
       });
 
@@ -564,7 +650,7 @@ export default function App() {
       let buffer = "";
 
       setIsTyping(false);
-      setMessages(prev => [...prev, { role: "assistant", content: "", thinking: "", streaming: true }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "", thinking: "", streaming: true, proposedEdits: [] }]);
 
       while (true) {
         const { done, value } = await reader.read();
@@ -588,6 +674,14 @@ export default function App() {
                 last.thinking = (last.thinking || "") + payload.delta;
               } else if (payload.type === "message" || payload.type === "chunk") {
                 last.content = (last.content || "") + payload.delta;
+              } else if (payload.type === "create_file" || payload.type === "proposed_edit") {
+                const action = payload.action || payload.edit;
+                if (action) {
+                  const existingEdits = last.proposedEdits || [];
+                  if (!existingEdits.some(e => e.file_path === action.file_path)) {
+                    last.proposedEdits = [...existingEdits, action];
+                  }
+                }
               } else if (payload.type === "error") {
                 last.content = (last.content || "") + "⚠️ Backend Error: " + payload.delta;
               }
@@ -603,7 +697,37 @@ export default function App() {
 
       setMessages(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = { ...updated[updated.length - 1], streaming: false };
+        const last = { ...updated[updated.length - 1] };
+        last.streaming = false;
+
+        // Parse <CREATE_FILE> tags from accumulated content if any
+        if (last.content && last.content.includes("<CREATE_FILE>")) {
+          const regex = /<CREATE_FILE>\s*([\s\S]*?)\s*<\/CREATE_FILE>/gi;
+          let match;
+          const parsedActions = [];
+          while ((match = regex.exec(last.content)) !== null) {
+            try {
+              const data = JSON.parse(match[1].trim());
+              if (data.path) {
+                parsedActions.push({ file_path: data.path, content: data.content || "", is_new_file: true });
+              }
+            } catch {
+              /* ignore malformed json */
+            }
+          }
+          if (parsedActions.length > 0) {
+            const existing = last.proposedEdits || [];
+            const merged = [...existing];
+            for (const act of parsedActions) {
+              if (!merged.some(e => e.file_path === act.file_path)) {
+                merged.push(act);
+              }
+            }
+            last.proposedEdits = merged;
+          }
+        }
+
+        updated[updated.length - 1] = last;
         return updated;
       });
 
@@ -612,12 +736,17 @@ export default function App() {
       setIsTyping(false);
 
       let mockReply = `Here is a solution for **${msg}**:\n\n`;
-      if (msg.toLowerCase().includes("optimize")) {
+      let proposedEditObj = null;
+
+      if (msg.toLowerCase().includes("create") || msg.toLowerCase().includes("new file")) {
+        const fileMatch = msg.match(/(?:create|file)\s+([\w/.-]+\.[\w]+)/i);
+        const targetPath = fileMatch ? fileMatch[1] : "src/test/example.js";
+        mockReply += `I have created the requested file:\n\n<CREATE_FILE>\n{\n  "path": "${targetPath}",\n  "content": "// Created by AI IDE\\nconsole.log('Hello from ${targetPath}');\\n"\n}\n</CREATE_FILE>`;
+        proposedEditObj = { file_path: targetPath, content: `// Created by AI IDE\nconsole.log('Hello from ${targetPath}');\n`, is_new_file: true };
+      } else if (msg.toLowerCase().includes("optimize")) {
         mockReply += `\`\`\`js\n// Optimized function with O(n) memoization\nconst memo = {};\nfunction fibonacciMemo(n) {\n  if (n <= 1) return n;\n  if (memo[n]) return memo[n];\n  return memo[n] = fibonacciMemo(n - 1) + fibonacciMemo(n - 2);\n}\n\`\`\``;
       } else if (msg.toLowerCase().includes("type") || msg.toLowerCase().includes("ts")) {
         mockReply += `\`\`\`ts\ntype NumericInput = number;\ntype SequenceResult = number[];\n\nexport function calculateFibonacci(n: NumericInput): SequenceResult {\n  const result: number[] = [];\n  for (let i = 0; i < n; i++) {\n    result.push(i <= 1 ? i : result[i - 1] + result[i - 2]);\n  }\n  return result;\n}\n\`\`\``;
-      } else if (msg.toLowerCase().includes("test")) {
-        mockReply += `\`\`\`js\n// Jest Unit Tests\ndescribe('fibonacci', () => {\n  test('should return correct values', () => {\n    expect(fibonacci(0)).toBe(0);\n    expect(fibonacci(1)).toBe(1);\n    expect(fibonacci(6)).toBe(8);\n  });\n});\n\`\`\``;
       } else {
         mockReply += `\`\`\`js\n// Helper snippet:\nfunction processData(items) {\n  return items.filter(Boolean).map(item => ({\n    id: item.id,\n    processedAt: new Date().toISOString(),\n  }));\n}\n\`\`\``;
       }
@@ -627,34 +756,26 @@ export default function App() {
         thinking: "Prepared response with executable code snippet.",
         content: mockReply,
         streaming: false,
+        proposedEdits: proposedEditObj ? [proposedEditObj] : [],
       }]);
     }
   };
 
   // ── Run code: streams live interactive WebSocket session into terminal ──
   const handleRunCode = async () => {
-    const runLanguage = langFromFile(activeFile);
-    const supported = new Set(["javascript", "typescript", "python", "java", "css"]);
-
     setTerminalOpen(true);
 
-    if (runLanguage === "css") {
+    if (activeFile && activeFile.toLowerCase().endsWith(".css")) {
       setTerminalTab("preview");
       return;
     }
 
     setTerminalTab("terminal");
 
-    if (!supported.has(runLanguage)) {
-      setTerminalLogs(prev => [...prev, `\n$ run ${activeFile}`, `⚠️ ${activeFile} can't be executed. Use JS, TS, Python, Java, or CSS.`]);
-      return;
-    }
-
     setIsRunning(true);
     try {
-      // Trigger live interactive WebSocket session
+      // Trigger live interactive WebSocket session with auto language detection
       setActiveRunConfig({
-        language: runLanguage,
         code,
         fileName: activeFile,
         runId: Date.now(),
@@ -669,6 +790,18 @@ export default function App() {
   };
 
   const currentModel = modelsList.find(m => m.id === selectedModelId) ?? modelsList[0];
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0d1117', color: '#e2e8f0' }}>
+        <div style={{ fontSize: 14, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#a78bfa' }}>Loading session…</div>
+      </div>
+    );
+  }
+
+  if (!session || !user) {
+    return <AuthScreen />;
+  }
 
   return (
     <div style={{
@@ -760,45 +893,62 @@ export default function App() {
           </button>
         </div>
 
-        {/* Right: model picker */}
-        <div style={{ position: "relative" }}>
+        {/* Right: user controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 11, color: "#e2e8f0" }}>
+            <span>👤</span>
+            <span>{user?.email || "Authenticated user"}</span>
+          </div>
           <button
-            onClick={() => setShowModelMenu(v => !v)}
+            onClick={signOut}
             style={{
               display: "flex", alignItems: "center", gap: 6,
-              background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)",
-              borderRadius: 12, padding: "3px 10px 3px 8px", cursor: "pointer", fontFamily: "inherit",
+              background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)",
+              borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
+              color: "#fca5a5", fontSize: 11, fontWeight: 600,
             }}
           >
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
-            <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 500 }}>{currentModel.label}</span>
-            <svg width="10" height="10" fill="none" stroke="#7c6ab5" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-            </svg>
+            Logout
           </button>
-          {showModelMenu && (
-            <div style={{
-              position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
-              background: "#161b22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-              overflow: "hidden", minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            }}>
-              {modelsList.map(m => (
-                <div key={m.id} onClick={() => { setSelectedModelId(m.id); setShowModelMenu(false); }}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "8px 12px", cursor: "pointer", fontSize: 12,
-                    color: selectedModelId === m.id ? "#e2e8f0" : "#6b7280",
-                    background: selectedModelId === m.id ? "rgba(139,92,246,0.12)" : "transparent",
-                  }}
-                  onMouseEnter={e => { if (selectedModelId !== m.id) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
-                  onMouseLeave={e => { if (selectedModelId !== m.id) e.currentTarget.style.background = "transparent"; }}
-                >
-                  <span>{m.label}</span>
-                  <span style={{ fontSize: 10, color: "#7c3aed", background: "rgba(124,58,237,0.1)", padding: "1px 6px", borderRadius: 4 }}>{m.badge}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowModelMenu(v => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)",
+                borderRadius: 12, padding: "3px 10px 3px 8px", cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+              <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 500 }}>{currentModel.label}</span>
+              <svg width="10" height="10" fill="none" stroke="#7c6ab5" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" />
+              </svg>
+            </button>
+            {showModelMenu && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
+                background: "#161b22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
+                overflow: "hidden", minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              }}>
+                {modelsList.map(m => (
+                  <div key={m.id} onClick={() => { setSelectedModelId(m.id); setShowModelMenu(false); }}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "8px 12px", cursor: "pointer", fontSize: 12,
+                      color: selectedModelId === m.id ? "#e2e8f0" : "#6b7280",
+                      background: selectedModelId === m.id ? "rgba(139,92,246,0.12)" : "transparent",
+                    }}
+                    onMouseEnter={e => { if (selectedModelId !== m.id) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                    onMouseLeave={e => { if (selectedModelId !== m.id) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span>{m.label}</span>
+                    <span style={{ fontSize: 10, color: "#7c3aed", background: "rgba(124,58,237,0.1)", padding: "1px 6px", borderRadius: 4 }}>{m.badge}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -873,6 +1023,7 @@ export default function App() {
                         else if (name.endsWith(".cpp") || name.endsWith(".c++")) { lang = "C++"; color = "#00599C"; }
                         setFiles([...files, { name, lang, color }]);
                         setFileContents(prev => ({ ...prev, [name]: "" }));
+                        setOpenTabs(prev => prev.includes(name) ? prev : [...prev, name]);
                         setActiveFile(name);
                       }
                     }}
@@ -880,7 +1031,10 @@ export default function App() {
                   >+</button>
                 </div>
                 {files.map(f => (
-                  <div key={f.name} onClick={() => setActiveFile(f.name)}
+                  <div key={f.name} onClick={() => {
+                    setActiveFile(f.name);
+                    setOpenTabs(prev => prev.includes(f.name) ? prev : [...prev, f.name]);
+                  }}
                     style={{
                       display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer",
                       background: activeFile === f.name ? "rgba(139,92,246,0.1)" : "transparent",
@@ -925,21 +1079,24 @@ export default function App() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#0d1117", overflow: "hidden", minWidth: 0 }}>
           {/* Tab Bar */}
           <div style={{ display: "flex", alignItems: "stretch", background: "#0d1117", borderBottom: "1px solid rgba(255,255,255,0.05)", height: 36, flexShrink: 0 }}>
-            {files.map(f => (
-              <div key={f.name} onClick={() => setActiveFile(f.name)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7, padding: "0 14px", cursor: "pointer", fontSize: 12,
-                  color: activeFile === f.name ? "#e2e8f0" : "#4b5563",
-                  borderBottom: activeFile === f.name ? "2px solid #7c3aed" : "2px solid transparent",
-                  borderRight: "1px solid rgba(255,255,255,0.04)",
-                  background: activeFile === f.name ? "rgba(139,92,246,0.06)" : "transparent",
-                  transition: "all 0.15s", whiteSpace: "nowrap",
-                }}
-              >
-                <span style={{ fontSize: 9.5, fontWeight: 700, color: f.color, fontFamily: "monospace" }}>{f.lang}</span>
-                {f.name}
-              </div>
-            ))}
+            {openTabs.map(fName => {
+              const file = files.find(f => f.name === fName) || { name: fName, lang: "TXT", color: "#9ca3af" };
+              return (
+                <div key={file.name} onClick={() => setActiveFile(file.name)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 7, padding: "0 14px", cursor: "pointer", fontSize: 12,
+                    color: activeFile === file.name ? "#e2e8f0" : "#4b5563",
+                    borderBottom: activeFile === file.name ? "2px solid #7c3aed" : "2px solid transparent",
+                    borderRight: "1px solid rgba(255,255,255,0.04)",
+                    background: activeFile === file.name ? "rgba(139,92,246,0.06)" : "transparent",
+                    transition: "all 0.15s", whiteSpace: "nowrap",
+                  }}
+                >
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: file.color, fontFamily: "monospace" }}>{file.lang}</span>
+                  {file.name}
+                </div>
+              );
+            })}
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 14px", gap: 4, color: "#374151", fontSize: 11 }}>
               <span>src</span><span style={{ color: "#1f2937" }}>/</span><span style={{ color: "#6b7280" }}>{activeFile}</span>
             </div>

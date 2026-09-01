@@ -14,6 +14,7 @@ if sys.platform == "win32":
     except AttributeError:
         pass
 
+from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.completion import router as completion_router
 from app.api.routes.edit import router as edit_router
@@ -26,9 +27,14 @@ from app.core.lifespan import lifespan
 from app.core.logging import configure_logging
 
 
+from app.services.terminal_service import resolve_language
+
+
 class CodeRunRequest(BaseModel):
-    language: str
-    code: str
+    language: str | None = None
+    code: str = ""
+    file_name: str | None = None
+    fileName: str | None = None
     stdin: str = ""
 
 
@@ -61,8 +67,13 @@ def create_app() -> FastAPI:
         import re
         import sys
         import tempfile
+        from fastapi import HTTPException
 
-        lang = req.language.lower().strip()
+        file_name = req.file_name or req.fileName or "main.py"
+        try:
+            lang = resolve_language(language=req.language, file_name=file_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         timeout_sec = 10
 
         try:
@@ -186,6 +197,7 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"output": f"Execution Error: {str(e)}"}
 
+    app.include_router(auth_router, prefix=settings.api_prefix)
     app.include_router(workspace_router, prefix=settings.api_prefix)
     app.include_router(terminal_router, prefix=settings.api_prefix)
     app.include_router(chat_router, prefix=settings.api_prefix)

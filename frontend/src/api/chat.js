@@ -1,18 +1,28 @@
-import { getBaseUrl } from "./client";
+import { getAuthHeaders, getBaseUrl } from "./client";
 
-export async function streamChat(messages, model = null, provider = "gemini", onChunk, onError, onDone) {
+export async function streamChat(
+  messages,
+  model = null,
+  provider = "gemini",
+  openFiles = [],
+  activeFile = null,
+  onChunk,
+  onError,
+  onDone
+) {
   const url = `${getBaseUrl()}/chat/stream`;
 
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         messages,
         model,
         provider,
+        open_files: openFiles,
+        active_file: activeFile,
       }),
     });
 

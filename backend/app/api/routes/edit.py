@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.deps import ensure_model_allowed, get_app_settings, get_llm_service
+from app.api.routes.auth import get_current_user
 from app.core.config import Settings
 from app.schemas.edit import EditRequest, ProposedEdit
 from app.services.llm_provider import LLMProvider
@@ -13,6 +14,7 @@ router = APIRouter(tags=["edit"])
 @router.post("/edit", response_model=ProposedEdit)
 async def request_proposed_edit(
     request: EditRequest,
+    current_user: dict = Depends(get_current_user),
     settings: Settings = Depends(get_app_settings),
     llm_service: LLMProvider = Depends(get_llm_service),
 ) -> ProposedEdit:

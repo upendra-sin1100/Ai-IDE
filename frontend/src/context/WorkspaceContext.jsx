@@ -154,6 +154,11 @@ export function WorkspaceProvider({ children }) {
   const acceptProposedEdit = useCallback(async ({ file_path, content }) => {
     setError(null);
     try {
+      try {
+        await workspaceApi.createFile(file_path, false);
+      } catch {
+        /* file might already exist if editing */
+      }
       await workspaceApi.writeFile(file_path, content);
       setFileContents((prev) => ({ ...prev, [file_path]: content }));
       setDirtyFiles((prev) => ({ ...prev, [file_path]: false }));
