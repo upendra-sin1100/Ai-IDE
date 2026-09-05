@@ -16,7 +16,7 @@ export async function getAuthHeaders(extraHeaders = {}) {
 }
 
 export async function requestJson(endpoint, options = {}) {
-  const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
+  const url = endpoint.startsWith("http") ? endpoint : getApiUrl(endpoint);
   const headers = await getAuthHeaders(options.headers || {});
 
   const response = await fetch(url, {
@@ -42,4 +42,8 @@ export async function requestJson(endpoint, options = {}) {
 
 export function getBaseUrl() {
   return BASE_URL;
+}
+
+export function getApiUrl(endpoint) {
+  return `${BASE_URL}/${endpoint.replace(/^\/+/, "")}`;
 }

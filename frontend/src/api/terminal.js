@@ -1,9 +1,8 @@
-import { getBaseUrl } from "./client";
+import { getApiUrl } from "./client";
 import { getSupabaseAccessToken } from "../lib/supabase";
 
 export async function openTerminalSocket(onData, onOpen, onClose, onError) {
-  const httpUrl = getBaseUrl();
-  const wsUrl = httpUrl.replace(/^http/, "ws") + "/terminal/ws";
+  const wsUrl = getApiUrl("/terminal/ws").replace(/^http/, "ws");
   const token = await getSupabaseAccessToken();
   if (!token) throw new Error("Authentication is required for terminal sessions.");
 

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { getAuthHeaders, getBaseUrl } from "../api/client";
+import { getApiUrl, getAuthHeaders } from "../api/client";
 
-export function useChatStream(apiUrl = getBaseUrl()) {
+export function useChatStream(apiUrl = null) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,7 +31,10 @@ export function useChatStream(apiUrl = getBaseUrl()) {
       }));
 
       const headers = await getAuthHeaders();
-      const response = await fetch(`${apiUrl}/chat/stream`, {
+      const chatUrl = apiUrl
+        ? `${apiUrl.replace(/\/+$/, "")}/chat/stream`
+        : getApiUrl("/chat/stream");
+      const response = await fetch(chatUrl, {
         method: "POST",
         headers,
         body: JSON.stringify({

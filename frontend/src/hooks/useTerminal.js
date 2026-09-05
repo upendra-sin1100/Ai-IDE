@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getSupabaseAccessToken } from "../lib/supabase";
-import { getBaseUrl } from "../api/client";
+import { getApiUrl, getBaseUrl } from "../api/client";
 
 export function useTerminal(onData, runConfig = null) {
   const [connected, setConnected] = useState(false);
@@ -14,10 +14,9 @@ export function useTerminal(onData, runConfig = null) {
 
     const isRun = Boolean(runConfig);
     const apiUrl = getBaseUrl();
-    const wsUrl = apiUrl.replace(/^http/, "ws");
     const endpoint = isRun
-      ? `${wsUrl}/terminal/run_ws`
-      : `${wsUrl}/terminal/ws`;
+      ? getApiUrl("/terminal/run_ws").replace(/^http/, "ws")
+      : getApiUrl("/terminal/ws").replace(/^http/, "ws");
 
     getSupabaseAccessToken().then(async (token) => {
       if (cancelled) return;

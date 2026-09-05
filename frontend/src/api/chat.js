@@ -1,4 +1,4 @@
-import { getAuthHeaders, getBaseUrl } from "./client";
+import { getAuthHeaders, getApiUrl } from "./client";
 
 export async function streamChat(
   messages,
@@ -10,7 +10,7 @@ export async function streamChat(
   onError,
   onDone
 ) {
-  const url = `${getBaseUrl()}/chat/stream`;
+  const url = getApiUrl("/chat/stream");
 
   try {
     const headers = await getAuthHeaders();

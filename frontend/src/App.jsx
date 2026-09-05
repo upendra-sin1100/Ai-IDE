@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
-import { getAuthHeaders, getBaseUrl, requestJson } from "./api/client";
+import { getApiUrl, getAuthHeaders, requestJson } from "./api/client";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -709,7 +709,7 @@ export default function App() {
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${getBaseUrl()}/chat/stream`, {
+      const res = await fetch(getApiUrl("/chat/stream"), {
         method: "POST",
         headers,
         body: JSON.stringify({
