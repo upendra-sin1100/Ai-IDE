@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import jwt
@@ -10,6 +11,7 @@ from app.api.deps import get_app_settings
 from app.core.config import Settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 _jwks_cache: dict[str, dict[str, dict]] = {}
 _jwks_locks: dict[str, asyncio.Lock] = {}
@@ -70,6 +72,7 @@ async def verify_token(token: str, settings: Settings) -> dict:
             detail="Supabase auth is not configured on the server.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    logger.info("Supabase URL configured for token verification: %s", settings.supabase_url)
 
     try:
         signing_key = await _get_signing_key(token, settings)
@@ -85,6 +88,7 @@ async def verify_token(token: str, settings: Settings) -> dict:
             raise jwt.InvalidTokenError("JWT did not contain a subject.")
         return {"id": user_id, **claims}
     except (httpx.HTTPError, jwt.InvalidTokenError, ValueError, KeyError) as exc:
+        logger.warning("Token verification failed: %s: %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired Supabase session.",
