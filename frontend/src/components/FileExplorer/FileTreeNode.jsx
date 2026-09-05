@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, FolderOpen, FileCode, FileText, Plus, Trash2, Edit2, ChevronRight, ChevronDown } from "lucide-react";
+import { Folder, FolderOpen, FileCode, FileCode2, FileText, Coffee, Plus, Trash2, Edit2, ChevronRight, ChevronDown } from "lucide-react";
 
 export function FileTreeNode({ node, level = 0, onSelect, activeFilePath, onCreate, onDelete, onRename }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -33,10 +33,17 @@ export function FileTreeNode({ node, level = 0, onSelect, activeFilePath, onCrea
   };
 
   const getFileIcon = (name) => {
-    if (name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".ts") || name.endsWith(".tsx")) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.endsWith(".java")) {
+      return <Coffee size={15} className="text-orange-400 shrink-0" />;
+    }
+    if (lowerName.endsWith(".c") || lowerName.endsWith(".h") || lowerName.endsWith(".cpp") || lowerName.endsWith(".cxx") || lowerName.endsWith(".cc")) {
+      return <FileCode2 size={15} className="text-sky-400 shrink-0" />;
+    }
+    if (lowerName.endsWith(".js") || lowerName.endsWith(".jsx") || lowerName.endsWith(".ts") || lowerName.endsWith(".tsx")) {
       return <FileCode size={15} className="text-yellow-400 shrink-0" />;
     }
-    if (name.endsWith(".json") || name.endsWith(".py") || name.endsWith(".html") || name.endsWith(".css")) {
+    if (lowerName.endsWith(".json") || lowerName.endsWith(".py") || lowerName.endsWith(".html") || lowerName.endsWith(".css")) {
       return <FileCode size={15} className="text-blue-400 shrink-0" />;
     }
     return <FileText size={15} className="text-slate-400 shrink-0" />;
@@ -45,9 +52,8 @@ export function FileTreeNode({ node, level = 0, onSelect, activeFilePath, onCrea
   return (
     <div>
       <div
-        className={`group flex items-center justify-between py-1.5 pr-2 text-xs font-mono cursor-pointer transition-colors select-none ${
-          isActive ? "bg-cyan-500/20 text-cyan-300 font-medium" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
-        }`}
+        className={`group flex items-center justify-between py-1.5 pr-2 text-xs font-mono cursor-pointer transition-colors select-none ${isActive ? "bg-cyan-500/20 text-cyan-300 font-medium" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
+          }`}
         style={{ paddingLeft: `${paddingLeft}px` }}
         onClick={handleToggle}
         onMouseEnter={() => setIsHovered(true)}

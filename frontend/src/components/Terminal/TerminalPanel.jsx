@@ -12,13 +12,14 @@ export function TerminalPanel({ onClose = null, runConfig = null, onStop = null 
 
   const handleDataFromBackend = useCallback((data) => {
     if (xtermRef.current) {
-      xtermRef.current.write(data);
+      const terminal = xtermRef.current;
+      terminal.write(data, () => terminal.refresh(0, terminal.rows - 1));
     } else {
       outputBufferRef.current.push(data);
     }
   }, []);
 
-  const { connected, error, sendInput, reconnect, closeSession } = useTerminal(handleDataFromBackend, runConfig);
+  const { connected, error, sendInput, sendResize, reconnect, closeSession } = useTerminal(handleDataFromBackend, runConfig);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -38,13 +39,16 @@ export function TerminalPanel({ onClose = null, runConfig = null, onStop = null 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
+    term.focus();
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
     // Flush any early data received before xterm was ready
     if (outputBufferRef.current.length > 0) {
-      outputBufferRef.current.forEach((chunk) => term.write(chunk));
+      outputBufferRef.current.forEach((chunk) => {
+        term.write(chunk, () => term.refresh(0, term.rows - 1));
+      });
       outputBufferRef.current = [];
     }
 
@@ -64,6 +68,7 @@ export function TerminalPanel({ onClose = null, runConfig = null, onStop = null 
       try {
         if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientWidth > 0 && terminalRef.current.clientHeight > 0) {
           fitAddonRef.current.fit();
+          sendResize(term.cols, term.rows);
         }
       } catch {
         /* ignore */
@@ -85,22 +90,16 @@ export function TerminalPanel({ onClose = null, runConfig = null, onStop = null 
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [sendInput]);
+  }, [sendInput, sendResize]);
 
   useEffect(() => {
-    if (runConfig) {
-      outputBufferRef.current = [];
-      if (xtermRef.current) {
-        xtermRef.current.reset();
-      }
-    }
     if (fitAddonRef.current) {
       setTimeout(() => {
         try {
           fitAddonRef.current.fit();
         } catch {
-        /* ignore */
-      }
+          /* ignore */
+        }
       }, 50);
     }
   }, [runConfig]);
@@ -111,7 +110,7 @@ export function TerminalPanel({ onClose = null, runConfig = null, onStop = null 
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", background: "#090d16", width: "100%", height: "100%", overflow: "hidden" }}>
+    <div onClick={() => xtermRef.current?.focus()} style={{ display: "flex", flexDirection: "column", background: "#090d16", width: "100%", height: "100%", overflow: "hidden" }}>
       {/* Subheader status bar */}
       <div style={{ height: 26, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px", background: "#060911", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#94a3b8", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace" }}>

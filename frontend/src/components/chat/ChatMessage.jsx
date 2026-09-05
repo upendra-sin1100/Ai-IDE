@@ -13,8 +13,8 @@ export function ChatMessage({ message }) {
   const edits = Array.isArray(message.proposedEdits)
     ? message.proposedEdits
     : message.proposedEdit
-    ? [message.proposedEdit]
-    : [];
+      ? [message.proposedEdit]
+      : [];
 
   const handleAccept = async (editItem) => {
     if (!editItem) return;
@@ -39,7 +39,7 @@ export function ChatMessage({ message }) {
         {isAssistant ? (
           <>
             <Sparkles size={14} className="text-cyan-400" />
-            <span className="text-cyan-300">AI Copilot</span>
+            <span className="text-cyan-300">AI Chat</span>
           </>
         ) : (
           <span className="text-slate-300 font-semibold">You</span>

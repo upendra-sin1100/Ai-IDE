@@ -8,31 +8,13 @@ from app.core.config import Settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DEV_FALLBACK_TOKEN = "dev-local-token"
-
-
-async def get_current_user(
-    request: Request,
-    settings: Settings = Depends(get_app_settings),
-) -> dict:
-    authorization = request.headers.get("Authorization", "")
-    if not authorization or not authorization.lower().startswith("bearer "):
+async def verify_token(token: str, settings: Settings) -> dict:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    access_token = authorization.split(" ", 1)[1].strip()
-    if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if access_token == DEV_FALLBACK_TOKEN:
-        return {"id": "local-user", "email": "dev@example.com"}
 
     if not settings.supabase_url:
         raise HTTPException(
@@ -43,7 +25,7 @@ async def get_current_user(
 
     try:
         headers = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/json",
         }
         if settings.supabase_anon_key:
@@ -63,7 +45,7 @@ async def get_current_user(
             )
 
         payload = response.json()
-        user = payload.get("user")
+        user = payload.get("user", payload) if isinstance(payload, dict) else None
         if not isinstance(user, dict) or not user.get("id"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -80,9 +62,19 @@ async def get_current_user(
         ) from exc
 
 
-@router.post("/login")
-async def login() -> dict:
-    return {"token": DEV_FALLBACK_TOKEN}
+async def get_current_user(
+    request: Request,
+    settings: Settings = Depends(get_app_settings),
+) -> dict:
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await verify_token(authorization.split(" ", 1)[1].strip(), settings)
 
 
 @router.get("/me")

@@ -3,8 +3,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.routes.auth import get_current_user
 
 router = APIRouter(tags=["legacy"])
 
@@ -16,7 +17,10 @@ class TerminalRequest:
 
 
 @router.post("/terminal/execute")
-async def execute_terminal_command(request: dict) -> dict[str, str | int]:
+async def execute_terminal_command(
+    request: dict,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, str | int]:
     command = str(request.get("command", "")).strip()
     if not command:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Command is required.")

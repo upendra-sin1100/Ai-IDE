@@ -1,0 +1,1 @@
+print("Mounted workspace works")

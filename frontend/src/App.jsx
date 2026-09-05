@@ -4,6 +4,7 @@ import { getAuthHeaders } from "./api/client";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
+import { Bot, Coffee, FileCode2 } from "lucide-react";
 import "./App.css";
 
 const INITIAL_CODE = `# Welcome to AI IDE Pro
@@ -20,9 +21,9 @@ const MESSAGES = [
   {
     role: "assistant",
     thinking:
-      "Analyzing workspace... Gemini AI copilot ready. Ready to process code and provide optimized solutions.",
+      "Analyzing workspace... Gemini AI Chat ready. Ready to process code and provide optimized solutions.",
     content:
-      "Hello! I'm your AI copilot powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\nUse the **Run** button up top to execute your code — output shows up in the terminal drawer below the editor.\n\n```python\n# Try running this Python code:\ndef greet(name):\n    return f'Hello, {name}!'\n\nprint(greet('Developer'))\n```",
+      "Hello! I'm your AI Chat powered by Gemini.\n\nI can suggest code directly into your editor — ask me to write or refine any code and click **Insert** or **Replace All** to update your code instantly!\n\nUse the **Run** button up top to execute your code — output shows up in the terminal drawer below the editor.\n\n```python\n# Try running this Python code:\ndef greet(name):\n    return f'Hello, {name}!'\n\nprint(greet('Developer'))\n```",
   },
 ];
 
@@ -61,8 +62,10 @@ const NAV = [
 /* ── helpers ── */
 function langFromFile(name) {
   if (name.endsWith(".ts")) return "typescript";
+  if (name.endsWith(".c") || name.endsWith(".h")) return "c";
   if (name.endsWith(".css")) return "css";
   if (name.endsWith(".java")) return "java";
+  if (name.endsWith(".php")) return "php";
   if (name.endsWith(".md")) return "markdown";
   if (name.endsWith(".cpp") || name.endsWith(".c++")) return "cpp";
   if (name.endsWith(".py")) return "python";
@@ -71,9 +74,62 @@ function langFromFile(name) {
   return "javascript";
 }
 
+function fileBadge(name, color, size = 16) {
+  if (name.endsWith(".java")) return <Coffee size={size} color={color} strokeWidth={2.2} />;
+  if (name.endsWith(".c") || name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".c++")) {
+    return <FileCode2 size={size} color={color} strokeWidth={2.2} />;
+  }
+  return <span style={{ fontSize: 9.5, fontWeight: 700, color, fontFamily: "monospace", minWidth: 18 }}>{name.split(".").pop()?.toUpperCase() || "TXT"}</span>;
+}
+
+function parseCreateFiles(content) {
+  const edits = [];
+  const visibleContent = content.replace(/<CREATE_FILE>\s*([\s\S]*?)\s*<\/CREATE_FILE>/gi, (_, raw) => {
+    try {
+      const data = JSON.parse(raw.trim());
+      if (data.path) {
+        edits.push({ file_path: data.path, content: data.content || "", is_new_file: true });
+      }
+    } catch {
+      return _;
+    }
+    return "";
+  }).replace(/\n{3,}/g, "\n\n").trim();
+
+  return { visibleContent, edits };
+}
+
+function CreateFileCard({ edit, onCreate }) {
+  const extension = edit.file_path.split(".").pop()?.toLowerCase();
+  const color = extension === "java" ? "#f89820" : ["c", "h", "cpp", "cc", "cxx"].includes(extension) ? "#659ad2" : "#a78bfa";
+  return (
+    <div style={{ margin: "10px 0", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 9, overflow: "hidden", background: "rgba(15,23,32,0.9)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 11px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#d1fae5", fontWeight: 600 }}>
+          {fileBadge(edit.file_path, color, 15)}
+          <span>New file: {edit.file_path}</span>
+        </div>
+        <button onClick={() => onCreate(edit)} style={{ border: 0, borderRadius: 5, padding: "4px 8px", background: "#16a34a", color: "white", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+          Add to workspace
+        </button>
+      </div>
+      <pre style={{ margin: 0, padding: "9px 11px", maxHeight: 180, overflow: "auto", color: "#cbd5e1", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{edit.content}</pre>
+    </div>
+  );
+}
+
 // ── Renders message content with code blocks as suggestion cards ──
-function MessageContent({ content, onAccept, onReplace }) {
+function MessageContent({ content, proposedEdits = [], onAccept, onReplace, onCreateFile }) {
   if (!content) return null;
+
+  const parsedFiles = parseCreateFiles(content);
+  const fileEdits = [...parsedFiles.edits];
+  for (const edit of proposedEdits) {
+    if (edit?.file_path && !fileEdits.some((item) => item.file_path === edit.file_path)) {
+      fileEdits.push(edit);
+    }
+  }
+  content = parsedFiles.visibleContent;
 
   const parts = [];
   const regex = /```(?:\w+)?\n?([\s\S]*?)```/g;
@@ -104,6 +160,9 @@ function MessageContent({ content, onAccept, onReplace }) {
           />
         );
       })}
+      {fileEdits.map((edit) => (
+        <CreateFileCard key={edit.file_path} edit={edit} onCreate={onCreateFile} />
+      ))}
     </div>
   );
 }
@@ -289,7 +348,7 @@ function ThinkingBubble({ text }) {
   );
 }
 
-function Message({ msg, onAcceptCode, onReplaceCode }) {
+function Message({ msg, onAcceptCode, onReplaceCode, onCreateFile }) {
   const isUser = msg.role === "user";
   const hasCode = !isUser && msg.content && /```[\s\S]*?```/.test(msg.content);
 
@@ -313,8 +372,10 @@ function Message({ msg, onAcceptCode, onReplaceCode }) {
           ) : (
             <MessageContent
               content={msg.content}
+              proposedEdits={msg.proposedEdits}
               onAccept={onAcceptCode}
               onReplace={onReplaceCode}
+              onCreateFile={onCreateFile}
             />
           )}
           {msg.streaming && !hasCode && (
@@ -538,6 +599,28 @@ export default function App() {
     }
     showToast("Editor content replaced ✓");
   }, [setCode]);
+
+  const handleCreateFile = useCallback((edit) => {
+    const filePath = edit.file_path;
+    const name = filePath.split("/").pop() || filePath;
+    const lowerName = name.toLowerCase();
+    let lang = "TXT";
+    let color = "#9ca3af";
+    if (lowerName.endsWith(".java")) { lang = "JAVA"; color = "#f89820"; }
+    else if (lowerName.endsWith(".c") || lowerName.endsWith(".h")) { lang = "C"; color = "#659ad2"; }
+    else if (lowerName.endsWith(".cpp") || lowerName.endsWith(".cxx") || lowerName.endsWith(".cc")) { lang = "C++"; color = "#00599c"; }
+    else if (lowerName.endsWith(".php")) { lang = "PHP"; color = "#777bb4"; }
+    else if (lowerName.endsWith(".py")) { lang = "PY"; color = "#3572a5"; }
+    else if (lowerName.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
+
+    setFileContents((previous) => ({ ...previous, [filePath]: edit.content || "" }));
+    setFiles((previous) => previous.some((file) => file.name === filePath)
+      ? previous
+      : [...previous, { name: filePath, lang, color }]);
+    setOpenTabs((previous) => previous.includes(filePath) ? previous : [...previous, filePath]);
+    setActiveFile(filePath);
+    showToast(`${filePath} added to workspace`);
+  }, []);
 
   // ── Multi-file context helper ──
   const getOpenAndRelatedFiles = useCallback(() => {
@@ -1020,7 +1103,9 @@ export default function App() {
                         else if (name.endsWith(".css")) { lang = "CSS"; color = "#264de4"; }
                         else if (name.endsWith(".md")) { lang = "MD"; color = "#83a598"; }
                         else if (name.endsWith(".py")) { lang = "PY"; color = "#3572A5"; }
+                        else if (name.endsWith(".c") || name.endsWith(".h")) { lang = "C"; color = "#659AD2"; }
                         else if (name.endsWith(".cpp") || name.endsWith(".c++")) { lang = "C++"; color = "#00599C"; }
+                        else if (name.endsWith(".java")) { lang = "JAVA"; color = "#f89820"; }
                         setFiles([...files, { name, lang, color }]);
                         setFileContents(prev => ({ ...prev, [name]: "" }));
                         setOpenTabs(prev => prev.includes(name) ? prev : [...prev, name]);
@@ -1044,7 +1129,9 @@ export default function App() {
                     onMouseEnter={e => { if (activeFile !== f.name) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
                     onMouseLeave={e => { if (activeFile !== f.name) e.currentTarget.style.background = "transparent"; }}
                   >
-                    <span style={{ fontSize: 9.5, fontWeight: 700, color: f.color, fontFamily: "monospace", minWidth: 18 }}>{f.lang}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, color: f.color }}>
+                      {fileBadge(f.name, f.color)}
+                    </span>
                     <span style={{ fontSize: 12.5, color: activeFile === f.name ? "#e2e8f0" : "#6b7280" }}>{f.name}</span>
                   </div>
                 ))}
@@ -1155,6 +1242,12 @@ export default function App() {
                   OUTPUT
                 </span>
                 <span
+                  onClick={() => setTerminalTab("stdin")}
+                  style={{ color: terminalTab === "stdin" ? "#e2e8f0" : "#6b7280", borderBottom: terminalTab === "stdin" ? "2px solid #7c3aed" : "none", paddingBottom: 4, cursor: "pointer" }}
+                >
+                  INPUT
+                </span>
+                <span
                   onClick={() => setTerminalTab("preview")}
                   style={{ color: terminalTab === "preview" ? "#e2e8f0" : "#6b7280", borderBottom: terminalTab === "preview" ? "2px solid #7c3aed" : "none", paddingBottom: 4, cursor: "pointer" }}
                 >
@@ -1173,6 +1266,7 @@ export default function App() {
             {terminalOpen && terminalTab === "terminal" && (
               <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
                 <TerminalPanel
+                  key={activeRunConfig?.runId ?? "interactive-shell"}
                   onClose={() => setTerminalOpen(false)}
                   runConfig={activeRunConfig}
                   onStop={() => setActiveRunConfig(null)}
@@ -1257,7 +1351,7 @@ export default function App() {
           }}
           onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.4)"}
           onMouseLeave={e => { if (!isResizing) e.currentTarget.style.background = "transparent"; }}
-          title="Drag to resize AI Copilot panel"
+          title="Drag to resize AI Chat panel"
         />
 
         {/* ── Chat Panel ── */}
@@ -1272,12 +1366,10 @@ export default function App() {
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#7c3aed,#4f46e5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
+                <Bot size={15} color="white" strokeWidth={2} />
               </div>
               <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.2 }}>AI Copilot</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.2 }}>AI Chat</div>
                 <div style={{ fontSize: 10, color: "#22c55e", lineHeight: 1.2 }}>● {currentModel.label}</div>
               </div>
             </div>
@@ -1300,6 +1392,7 @@ export default function App() {
                 msg={msg}
                 onAcceptCode={handleAcceptCode}
                 onReplaceCode={handleReplaceCode}
+                onCreateFile={handleCreateFile}
               />
             ))}
             {isTyping && <TypingDots />}

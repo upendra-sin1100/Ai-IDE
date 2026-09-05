@@ -4,7 +4,7 @@ import asyncio
 import subprocess
 import sys
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,6 +15,7 @@ if sys.platform == "win32":
         pass
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.auth import get_current_user
 from app.api.routes.chat import router as chat_router
 from app.api.routes.completion import router as completion_router
 from app.api.routes.edit import router as edit_router
@@ -62,7 +63,10 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/api/run")
-    async def run_code(req: CodeRunRequest) -> dict[str, str]:
+    async def run_code(
+        req: CodeRunRequest,
+        current_user: dict = Depends(get_current_user),
+    ) -> dict[str, str]:
         import os
         import re
         import sys
@@ -77,7 +81,12 @@ def create_app() -> FastAPI:
         timeout_sec = 10
 
         try:
-            env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+            env = {
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONUTF8": "1",
+            }
 
             # --- PYTHON ---
             if lang in ["python", "python3", "py"]:
@@ -147,6 +156,31 @@ def create_app() -> FastAPI:
                         )
                     output = (res.stdout or "") + (res.stderr or "")
                     return {"output": output.strip() or "[Process finished with no output]"}
+
+            # --- PHP ---
+            elif lang in ["php"]:
+                from app.services.docker_execution_service import DockerExecutionService
+
+                docker_service = DockerExecutionService(timeout_seconds=timeout_sec)
+                docker_process = await docker_service.start(
+                    language="php",
+                    code=req.code,
+                    file_name="script.php",
+                )
+                try:
+                    if req.stdin:
+                        await docker_service.write_input(docker_process, req.stdin)
+                    if docker_process.process.stdin:
+                        docker_process.process.stdin.close()
+
+                    output_parts = []
+                    async for chunk in docker_service.read_output(docker_process):
+                        output_parts.append(chunk)
+                    output = "".join(output_parts)
+                    return {"output": output.strip() or "[Process finished with no output]"}
+                finally:
+                    if docker_process.process.returncode is None:
+                        await docker_service.stop(docker_process)
 
             # --- JAVA ---
             elif lang in ["java"]:

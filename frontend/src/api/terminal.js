@@ -1,10 +1,13 @@
 import { getBaseUrl } from "./client";
+import { getSupabaseAccessToken } from "../lib/supabase";
 
-export function openTerminalSocket(onData, onOpen, onClose, onError) {
+export async function openTerminalSocket(onData, onOpen, onClose, onError) {
   const httpUrl = getBaseUrl();
   const wsUrl = httpUrl.replace(/^http/, "ws") + "/terminal/ws";
+  const token = await getSupabaseAccessToken();
+  if (!token) throw new Error("Authentication is required for terminal sessions.");
 
-  const socket = new WebSocket(wsUrl);
+  const socket = new WebSocket(`${wsUrl}?access_token=${encodeURIComponent(token)}`);
 
   socket.onopen = () => {
     if (onOpen) onOpen();

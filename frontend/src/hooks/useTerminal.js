@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getSupabaseAccessToken } from "../lib/supabase";
 
 export function useTerminal(onData, runConfig = null) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState(null);
   const wsRef = useRef(null);
+  const pendingInputRef = useRef([]);
 
   const connect = useCallback(() => {
     wsRef.current?.close();
+    let cancelled = false;
 
     const isRun = Boolean(runConfig);
     const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
@@ -15,44 +18,68 @@ export function useTerminal(onData, runConfig = null) {
       ? `${wsUrl}/terminal/run_ws`
       : `${wsUrl}/terminal/ws`;
 
-    const ws = new WebSocket(endpoint);
-
-    ws.onopen = () => {
-      setConnected(true);
-      setError(null);
-      if (isRun && runConfig) {
-        ws.send(JSON.stringify(runConfig));
+    getSupabaseAccessToken().then((token) => {
+      if (cancelled) return;
+      if (!token) {
+        setError("Authentication is required for terminal sessions.");
+        return;
       }
-    };
 
-    ws.onmessage = (event) => {
-      if (onData) onData(event.data);
-    };
+      const ws = new WebSocket(`${endpoint}?access_token=${encodeURIComponent(token)}`);
 
-    ws.onerror = () => {
-      setError(isRun ? "Failed to start interactive execution session." : "Failed to connect to backend terminal session.");
-      setConnected(false);
-    };
+      ws.onopen = () => {
+        setConnected(true);
+        setError(null);
+        if (isRun && runConfig) {
+          ws.send(JSON.stringify(runConfig));
+        }
+        pendingInputRef.current.splice(0).forEach((message) => ws.send(JSON.stringify(message)));
+      };
 
-    ws.onclose = () => {
-      setConnected(false);
-    };
+      ws.onmessage = (event) => {
+        if (onData) onData(event.data);
+      };
 
-    wsRef.current = ws;
+      ws.onerror = () => {
+        setError(isRun ? "Failed to start interactive execution session." : "Failed to connect to backend terminal session.");
+        setConnected(false);
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+      };
+
+      wsRef.current = ws;
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [onData, runConfig]);
 
   useEffect(() => {
-    connect();
+    const cancelConnect = connect();
     return () => {
+      cancelConnect?.();
       wsRef.current?.close();
     };
   }, [connect]);
 
-  const sendInput = useCallback((data) => {
+  const sendMessage = useCallback((message) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
+      wsRef.current.send(JSON.stringify(message));
+    } else {
+      pendingInputRef.current.push(message);
     }
   }, []);
+
+  const sendInput = useCallback((data) => {
+    sendMessage({ type: "input", data });
+  }, [sendMessage]);
+
+  const sendResize = useCallback((cols, rows) => {
+    sendMessage({ type: "resize", cols, rows });
+  }, [sendMessage]);
 
   const closeSession = useCallback(() => {
     if (wsRef.current) {
@@ -60,5 +87,5 @@ export function useTerminal(onData, runConfig = null) {
     }
   }, []);
 
-  return { connected, error, sendInput, reconnect: connect, closeSession };
+  return { connected, error, sendInput, sendResize, reconnect: connect, closeSession };
 }
