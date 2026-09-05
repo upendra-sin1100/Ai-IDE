@@ -1,10 +1,23 @@
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, Depends, Query, WebSocket
 
+from app.api.deps import get_workspace_service
 from app.api.routes.auth import verify_token
+from app.api.routes.auth import get_current_user
+from app.services.workspace_service import WorkspaceService
+from app.schemas.workspace import FileNode
 from app.services.terminal_service import handle_terminal_websocket, handle_interactive_run_websocket
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
+
+
+@router.get("/tree", response_model=list[FileNode])
+async def get_terminal_tree(
+    path: str = Query("", description="Relative path in workspace root"),
+    current_user: dict = Depends(get_current_user),
+    workspace_service: WorkspaceService = Depends(get_workspace_service),
+) -> list[FileNode]:
+    return workspace_service.get_tree(path)
 
 
 def _origin_allowed(websocket: WebSocket, settings) -> bool:

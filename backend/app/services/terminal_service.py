@@ -104,7 +104,6 @@ class TerminalSession:
 
 
 async def handle_terminal_websocket(websocket: WebSocket, workspace_dir: str) -> None:
-    await websocket.accept()
     session = TerminalSession(workspace_dir)
     await session.start()
 
@@ -260,8 +259,6 @@ class InteractiveRunSession:
             self.docker_process = None
 
 async def handle_interactive_run_websocket(websocket: WebSocket, workspace_dir: str) -> None:
-    await websocket.accept()
-
     read_task = None
     session = None
 

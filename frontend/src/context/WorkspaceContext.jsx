@@ -24,9 +24,11 @@ export function WorkspaceProvider({ children }) {
     } finally {
       setLoadingTree(false);
     }
-  }, [authLoading, user]);
+  }, []);
 
   useEffect(() => {
+    if (authLoading || !user) return undefined;
+
     let isMounted = true;
     const fetchInitialTree = async () => {
       try {
@@ -40,7 +42,7 @@ export function WorkspaceProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authLoading, user]);
 
   const openFile = useCallback(async (path) => {
     if (!path) return;
