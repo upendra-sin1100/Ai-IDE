@@ -492,6 +492,8 @@ export default function App() {
 
   // ── Fetch dynamic models list from backend on mount ──
   useEffect(() => {
+    if (loading || !user) return undefined;
+
     async function loadModels() {
       try {
         const data = await requestJson("/models");
@@ -512,6 +514,7 @@ export default function App() {
       }
     }
     loadModels();
+    return undefined;
   }, [loading, user]);
 
   useEffect(() => {
