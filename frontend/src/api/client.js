@@ -1,6 +1,11 @@
 import { getSupabaseAuthHeaders } from '../lib/supabase';
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+const localFallback = "http://127.0.0.1:8000/api";
+const deployedFallback = typeof window !== "undefined"
+  ? `${window.location.origin}/api`
+  : localFallback;
+const BASE_URL = (configuredBaseUrl || deployedFallback).replace(/\/$/, "");
 
 export async function getAuthHeaders(extraHeaders = {}) {
   const authHeaders = await getSupabaseAuthHeaders();

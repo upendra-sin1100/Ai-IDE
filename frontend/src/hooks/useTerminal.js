@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getSupabaseAccessToken } from "../lib/supabase";
+import { getBaseUrl } from "../api/client";
 
 export function useTerminal(onData, runConfig = null) {
   const [connected, setConnected] = useState(false);
@@ -12,18 +13,26 @@ export function useTerminal(onData, runConfig = null) {
     let cancelled = false;
 
     const isRun = Boolean(runConfig);
-    const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
+    const apiUrl = getBaseUrl();
     const wsUrl = apiUrl.replace(/^http/, "ws");
     const endpoint = isRun
       ? `${wsUrl}/terminal/run_ws`
       : `${wsUrl}/terminal/ws`;
 
-    getSupabaseAccessToken().then((token) => {
+    getSupabaseAccessToken().then(async (token) => {
       if (cancelled) return;
       if (!token) {
         setError("Authentication is required for terminal sessions.");
         return;
       }
+
+      const backendOrigin = apiUrl.replace(/\/api\/?$/, "");
+      try {
+        await fetch(`${backendOrigin}/`, { cache: "no-store" });
+      } catch {
+        // The WebSocket attempt below reports the actionable connection error.
+      }
+      if (cancelled) return;
 
       const ws = new WebSocket(`${endpoint}?access_token=${encodeURIComponent(token)}`);
 

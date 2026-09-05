@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import * as workspaceApi from "../api/workspace";
 import { WorkspaceContext } from "./workspaceHelpers";
+import { useAuth } from "./AuthContext";
 
 export function WorkspaceProvider({ children }) {
+  const { user, loading: authLoading } = useAuth();
   const [tree, setTree] = useState([]);
   const [openTabs, setOpenTabs] = useState([]);
   const [activeFilePath, setActiveFilePath] = useState(null);
@@ -22,7 +24,7 @@ export function WorkspaceProvider({ children }) {
     } finally {
       setLoadingTree(false);
     }
-  }, []);
+  }, [authLoading, user]);
 
   useEffect(() => {
     let isMounted = true;

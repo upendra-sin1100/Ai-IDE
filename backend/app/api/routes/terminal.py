@@ -6,9 +6,18 @@ from app.core.config import get_settings
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 
+
+def _origin_allowed(websocket: WebSocket, settings) -> bool:
+    origin = websocket.headers.get("origin")
+    return not origin or origin in settings.cors_origins
+
 @router.websocket("/ws")
 async def terminal_websocket(websocket: WebSocket):
     settings = get_settings()
+    await websocket.accept()
+    if not _origin_allowed(websocket, settings):
+        await websocket.close(code=1008)
+        return
     try:
         await verify_token(websocket.query_params.get("access_token", ""), settings)
     except Exception:
@@ -22,6 +31,10 @@ async def terminal_websocket(websocket: WebSocket):
 @router.websocket("/run_ws")
 async def interactive_run_websocket(websocket: WebSocket):
     settings = get_settings()
+    await websocket.accept()
+    if not _origin_allowed(websocket, settings):
+        await websocket.close(code=1008)
+        return
     try:
         await verify_token(websocket.query_params.get("access_token", ""), settings)
     except Exception:

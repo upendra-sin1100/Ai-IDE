@@ -53,6 +53,7 @@ class Settings(BaseSettings):
             "http://localhost:5174",
             "http://127.0.0.1:5174",
             "http://localhost:3000",
+            "https://ai-ide-upendra.vercel.app",
         ]
     )
     workspace_dir: str = str(Path(__file__).resolve().parents[2])

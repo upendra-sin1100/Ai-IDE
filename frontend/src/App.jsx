@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
-import { getAuthHeaders } from "./api/client";
+import { getAuthHeaders, getBaseUrl, requestJson } from "./api/client";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -477,8 +477,6 @@ export default function App() {
   const editorRef = useRef(null);
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-
   // Interactive code execution config for TerminalPanel
   const [activeRunConfig, setActiveRunConfig] = useState(null);
 
@@ -496,21 +494,17 @@ export default function App() {
   useEffect(() => {
     async function loadModels() {
       try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`${apiBaseUrl}/api/models`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.models && data.models.length > 0) {
-            const formatted = data.models.map(m => ({
-              id: m.id,
-              label: m.label || m.id,
-              badge: (m.provider || "Gemini").charAt(0).toUpperCase() + (m.provider || "Gemini").slice(1),
-              provider: m.provider || "gemini",
-            }));
-            setModelsList(formatted);
-            if (data.default_model) {
-              setSelectedModelId(data.default_model);
-            }
+        const data = await requestJson("/models");
+        if (data.models && data.models.length > 0) {
+          const formatted = data.models.map(m => ({
+            id: m.id,
+            label: m.label || m.id,
+            badge: (m.provider || "Gemini").charAt(0).toUpperCase() + (m.provider || "Gemini").slice(1),
+            provider: m.provider || "gemini",
+          }));
+          setModelsList(formatted);
+          if (data.default_model) {
+            setSelectedModelId(data.default_model);
           }
         }
       } catch {
@@ -518,7 +512,7 @@ export default function App() {
       }
     }
     loadModels();
-  }, [apiBaseUrl]);
+  }, [loading, user]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -712,7 +706,7 @@ export default function App() {
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${apiBaseUrl}/api/chat/stream`, {
+      const res = await fetch(`${getBaseUrl()}/chat/stream`, {
         method: "POST",
         headers,
         body: JSON.stringify({

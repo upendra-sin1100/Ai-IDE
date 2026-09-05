@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { getAuthHeaders } from "../api/client";
+import { getAuthHeaders, getBaseUrl } from "../api/client";
 
-export function useChatStream(apiUrl = "http://localhost:8000/api") {
+export function useChatStream(apiUrl = getBaseUrl()) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
