@@ -2,10 +2,6 @@
 
 Lightweight, secure, AI-assisted IDE with a React + Vite frontend and a FastAPI backend. Designed for local development and simple deployment to cloud/VM hosting. Includes code execution in sandboxed containers and Supabase-based authentication.
 
-Badges
-- CI / build: TODO
-- License: MIT (example)
-
 Table of contents
 - [Features](#features)
 - [Repository structure](#repository-structure)
@@ -185,6 +181,5 @@ sudo certbot certificates
 - For code changes, fork, create a branch, and open a PR with a clear description of the change.
 - Add tests for critical backend logic when possible.
 
-## License & contact
-- License: MIT (replace with your chosen license)
+## Contact
 - Contact / support: upendra-sin1100 (GitHub)
