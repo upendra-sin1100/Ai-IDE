@@ -17,7 +17,7 @@ Table of contents
 - [Security notes](#security-notes)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
-- [License & contact](#license--contact)
+- [Contact](#Contact)
 
 ## Features
 - Web-based IDE UI (React + Vite)
