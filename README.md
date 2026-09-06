@@ -108,6 +108,59 @@ This project uses **Supabase** for authentication with support for Email/Passwor
 - The **Service Role Key** must remain server-side only
 - All API requests from the frontend include a bearer token in the Authorization header
 
+## Deployment
+
+### Architecture
+- **Frontend:** React + Vite, deployed on Vercel - [ai-ide-upendra.vercel.app](https://ai-ide-upendra.vercel.app)
+- **Backend:** FastAPI, hosted on an AWS EC2 instance (Ubuntu 26.04, t3.micro)
+- **Domain & HTTPS:** `ai-ide.duckdns.org` (free dynamic DNS) with a Let's Encrypt SSL certificate via Certbot, reverse-proxied through Nginx
+- **Auth:** Supabase (Google + email/password), verified backend-side via ES256 JWT + JWKS
+- **Code execution:** Sandboxed per-language Docker containers (network-isolated, capability-dropped, read-only root filesystem, resource-limited)
+
+### Backend hosting (EC2)
+The backend runs as a persistent `systemd` service so it survives reboots and crashes.
+
+```bash
+# SSH in
+ssh -i "ai-ide-key.pem" ubuntu@<EC2_PUBLIC_IP>
+
+# Service management
+sudo systemctl status ai-ide
+sudo systemctl restart ai-ide
+sudo journalctl -u ai-ide -f   # live logs
+```
+
+Service file: `/etc/systemd/system/ai-ide.service`
+
+### Deploying backend changes
+```bash
+# Local machine
+git add .
+git commit -m "your message"
+git push
+
+# On EC2
+cd ~/Ai-IDE
+git pull
+sudo systemctl restart ai-ide
+```
+
+### Environment variables (backend `.env` on EC2)
+
+
+
+### Why Docker execution needs no capability restriction bypass
+Language containers run with `--cap-drop ALL`, `--read-only`, `--network none`, and strict memory/CPU/PID limits for security. Since this strips root's usual permission-bypass capability inside the container, the host-side temp execution directory is explicitly `chmod 777`'d per run (safe - it's a fresh, single-use, auto-deleted directory) so the sandboxed process can still read/write its own code file.
+
+### Known limitations
+- `t3.micro` (1GB RAM) may struggle under concurrent code execution, especially JVM-based languages
+- No CI/CD - backend deploys are manual (`git pull` + service restart on EC2)
+- Let's Encrypt certificate auto-renews via Certbot; worth periodically confirming with `sudo certbot certificates`
+
+
+
+### Environment variables (frontend, on Vercel)
+
 ## Notes
 
 - The backend exposes several endpoints used by the frontend, including streaming chat and IDE file read/write APIs.
