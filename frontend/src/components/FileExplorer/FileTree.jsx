@@ -67,7 +67,7 @@ export function FileTree() {
             type="text"
             value={itemName}
             onChange={(e) => setItemName(e.target.value)}
-            placeholder={createModal.isDir ? "folder-name" : "filename.js"}
+            placeholder={createModal.isDir ? "folder-name" : "filename.js / index.php"}
             autoFocus
             className="w-full bg-slate-900 text-white text-xs px-2 py-1 rounded border border-cyan-500/50 outline-none focus:border-cyan-400"
           />

@@ -43,6 +43,9 @@ export function FileTreeNode({ node, level = 0, onSelect, activeFilePath, onCrea
     if (lowerName.endsWith(".js") || lowerName.endsWith(".jsx") || lowerName.endsWith(".ts") || lowerName.endsWith(".tsx")) {
       return <FileCode size={15} className="text-yellow-400 shrink-0" />;
     }
+    if (lowerName.endsWith(".php")) {
+      return <FileCode size={15} className="text-indigo-400 shrink-0" />;
+    }
     if (lowerName.endsWith(".json") || lowerName.endsWith(".py") || lowerName.endsWith(".html") || lowerName.endsWith(".css")) {
       return <FileCode size={15} className="text-blue-400 shrink-0" />;
     }

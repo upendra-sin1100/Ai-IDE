@@ -120,7 +120,7 @@ export function AuthScreen() {
                     </div>
                     <div>
                         <div style={{ fontSize: 20, fontWeight: 700 }}>AI IDE Pro</div>
-                        <div style={{ fontSize: 12, color: '#94a3b8' }}>Supabase authentication</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>Python · Java · C · C++ · JavaScript · PHP</div>
                     </div>
                 </div>
 
