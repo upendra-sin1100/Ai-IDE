@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import subprocess
@@ -274,6 +275,7 @@ class DockerExecutionService:
         )
 
         execution_dir = tempfile.mkdtemp(prefix="ai_ide_docker_")
+        os.chmod(execution_dir, 0o777)
         target_path = Path(execution_dir) / target_file
         container_name = None
 
