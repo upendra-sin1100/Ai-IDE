@@ -5,7 +5,7 @@ import * as workspaceApi from "./api/workspace";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileText, Folder, FolderOpen, Moon, Pencil, Sun, Trash2 } from "lucide-react";
+import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileText, Folder, FolderOpen, Moon, Pencil, Settings, Sun, Trash2 } from "lucide-react";
 import "./App.css";
 
 const INITIAL_CODE = `# Welcome to AI IDE Pro
@@ -1266,10 +1266,7 @@ export default function App() {
             <button style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: "#4b5563" }}
               onMouseEnter={e => e.currentTarget.style.color = "#9ca3af"}
               onMouseLeave={e => e.currentTarget.style.color = "#4b5563"}>
-              <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" strokeLinecap="round" />
-              </svg>
+              <Settings size={18} />
             </button>
           </div>
         </div>
