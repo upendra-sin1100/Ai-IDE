@@ -49,6 +49,47 @@ function flattenWorkspaceFiles(nodes, result = []) {
   return result;
 }
 
+function buildExplorerTree(files) {
+  const root = { directories: {}, files: [] };
+  for (const file of files) {
+    const parts = file.name.split("/").filter(Boolean);
+    let current = root;
+    parts.forEach((part, index) => {
+      if (index === parts.length - 1) {
+        current.files.push({ ...file, name: part, path: file.name });
+        return;
+      }
+      current.directories[part] ||= { name: part, path: parts.slice(0, index + 1).join("/"), directories: {}, files: [] };
+      current = current.directories[part];
+    });
+  }
+  return root;
+}
+
+function ExplorerDirectory({ directory, level, activeFile, onSelect }) {
+  const [expanded, setExpanded] = useState(level < 1);
+  const childDirectories = Object.values(directory.directories);
+  return (
+    <div>
+      <div onClick={() => setExpanded((value) => !value)} style={{ padding: "5px 10px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span style={{ display: "inline-block", width: 14 }}>{expanded ? "⌄" : "›"}</span>
+        <span style={{ color: "#d6a84f", marginRight: 6 }}>▰</span>{directory.name}
+      </div>
+      {expanded && (
+        <div>
+          {childDirectories.map((child) => <ExplorerDirectory key={child.path} directory={child} level={level + 1} activeFile={activeFile} onSelect={onSelect} />)}
+          {directory.files.map((file) => (
+            <div key={file.path} onClick={() => onSelect(file.path)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", paddingLeft: 28 + level * 12, cursor: "pointer", background: activeFile === file.path ? "rgba(139,92,246,0.1)" : "transparent", borderLeft: activeFile === file.path ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}>
+              <span style={{ display: "inline-flex", width: 18, flexShrink: 0, color: file.color }}>{fileBadge(file.name, file.color)}</span>
+              <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV = [
   {
     id: "files", label: "Explorer",
@@ -1199,24 +1240,22 @@ export default function App() {
                     style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
                   >+</button>
                 </div>
-                {files.map(f => (
-                  <div key={f.name} onClick={() => {
-                    setActiveFile(f.name);
-                    setOpenTabs(prev => prev.includes(f.name) ? prev : [...prev, f.name]);
-                  }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer",
-                      background: activeFile === f.name ? "rgba(139,92,246,0.1)" : "transparent",
-                      borderLeft: activeFile === f.name ? "2px solid #7c3aed" : "2px solid transparent",
-                      transition: "all 0.1s",
+                {Object.values(buildExplorerTree(files).directories).map((directory) => (
+                  <ExplorerDirectory
+                    key={directory.path}
+                    directory={directory}
+                    level={0}
+                    activeFile={activeFile}
+                    onSelect={(path) => {
+                      setActiveFile(path);
+                      setOpenTabs((previous) => previous.includes(path) ? previous : [...previous, path]);
                     }}
-                    onMouseEnter={e => { if (activeFile !== f.name) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-                    onMouseLeave={e => { if (activeFile !== f.name) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, color: f.color }}>
-                      {fileBadge(f.name, f.color)}
-                    </span>
-                    <span style={{ fontSize: 12.5, color: activeFile === f.name ? "#e2e8f0" : "#6b7280" }}>{f.name}</span>
+                  />
+                ))}
+                {buildExplorerTree(files).files.map((file) => (
+                  <div key={file.path} onClick={() => { setActiveFile(file.path); setOpenTabs((previous) => previous.includes(file.path) ? previous : [...previous, file.path]); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer" }}>
+                    <span style={{ width: 18, color: file.color }}>{fileBadge(file.name, file.color)}</span>
+                    <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280" }}>{file.name}</span>
                   </div>
                 ))}
               </div>
