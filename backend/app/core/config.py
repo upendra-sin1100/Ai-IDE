@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     supabase_url: str | None = None
     supabase_anon_key: str | None = None
+    supabase_service_role_key: str | None = None
     groq_api_url: str = "https://api.groq.com/openai/v1"
     gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
 

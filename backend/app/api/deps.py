@@ -17,8 +17,16 @@ def get_gemini_client(request: Request) -> httpx.AsyncClient:
     return request.app.state.gemini_client
 
 
-def get_workspace_service(settings: Settings = Depends(get_app_settings)) -> WorkspaceService:
-    return WorkspaceService(settings)
+async def get_workspace_service(
+    settings: Settings = Depends(get_app_settings),
+    request: Request = None,
+) -> WorkspaceService:
+    from app.api.routes.auth import get_current_user
+
+    # Resolve auth here to avoid a module import cycle between auth and dependencies.
+    current_user = await get_current_user(request, settings)
+    access_token = request.headers.get("Authorization", "").split(" ", 1)[-1]
+    return WorkspaceService(settings, user_id=current_user["id"], access_token=access_token)
 
 
 def get_llm_service(

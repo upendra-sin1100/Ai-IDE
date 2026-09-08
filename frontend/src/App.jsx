@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { getApiUrl, getAuthHeaders, requestJson } from "./api/client";
+import * as workspaceApi from "./api/workspace";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
@@ -39,6 +40,14 @@ const DEFAULT_MODELS = [
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", badge: "Gemini", provider: "gemini" },
   { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", badge: "Gemini", provider: "gemini" },
 ];
+
+function flattenWorkspaceFiles(nodes, result = []) {
+  for (const node of nodes) {
+    if (node.is_dir) flattenWorkspaceFiles(node.children || [], result);
+    else result.push(node);
+  }
+  return result;
+}
 
 const NAV = [
   {
@@ -438,6 +447,11 @@ export default function App() {
     return saved ? Math.min(600, Math.max(260, parseInt(saved, 10))) : 340;
   });
   const [isResizing, setIsResizing] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem("ai_ide_sidebar_width");
+    return saved ? Math.min(360, Math.max(160, parseInt(saved, 10))) : 200;
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
   const handleMouseDownResize = (e) => {
     e.preventDefault();
@@ -461,6 +475,28 @@ export default function App() {
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
   };
+
+  const handleMouseDownSidebarResize = (e) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const handlePointerMove = (moveEvent) => {
+      const newWidth = Math.min(360, Math.max(160, startWidth + moveEvent.clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("ai_ide_sidebar_width", newWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizingSidebar(false);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState(MESSAGES);
   const [activeTab, setActiveTab] = useState("files");
@@ -468,6 +504,47 @@ export default function App() {
   const [openTabs, setOpenTabs] = useState(["hello.py"]);
   const [isTyping, setIsTyping] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const workspaceReadyRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || !user) return undefined;
+
+    let cancelled = false;
+    const loadWorkspace = async () => {
+      try {
+        const nodes = await workspaceApi.getTree();
+        const workspaceFiles = flattenWorkspaceFiles(nodes);
+        const loadedContents = await Promise.all(
+          workspaceFiles.map(async (file) => [file.path, (await workspaceApi.readFile(file.path)).content])
+        );
+        if (cancelled) return;
+        workspaceReadyRef.current = true;
+        if (workspaceFiles.length === 0) return;
+        const loadedFiles = workspaceFiles.map((file) => ({
+          name: file.path,
+          lang: langFromFile(file.path).toUpperCase(),
+          color: "#9ca3af",
+        }));
+        setFiles(loadedFiles);
+        setFileContents(Object.fromEntries(loadedContents));
+        setActiveFile(workspaceFiles[0].path);
+        setOpenTabs([workspaceFiles[0].path]);
+      } catch (error) {
+        if (!cancelled) showToast(`Workspace load failed: ${error.message}`);
+      }
+    };
+    loadWorkspace();
+    return () => { cancelled = true; };
+  }, [loading, user]);
+
+  useEffect(() => {
+    if (loading || !user || !workspaceReadyRef.current || !activeFile) return undefined;
+    const timer = setTimeout(() => {
+      workspaceApi.writeFile(activeFile, fileContents[activeFile] || "")
+        .catch((error) => showToast(`Could not save ${activeFile}: ${error.message}`));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [activeFile, fileContents, loading, user]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [modelsList, setModelsList] = useState(DEFAULT_MODELS);
@@ -597,7 +674,7 @@ export default function App() {
     showToast("Editor content replaced ✓");
   }, [setCode]);
 
-  const handleCreateFile = useCallback((edit) => {
+  const handleCreateFile = useCallback(async (edit) => {
     const filePath = edit.file_path;
     const name = filePath.split("/").pop() || filePath;
     const lowerName = name.toLowerCase();
@@ -610,13 +687,19 @@ export default function App() {
     else if (lowerName.endsWith(".py")) { lang = "PY"; color = "#3572a5"; }
     else if (lowerName.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
 
-    setFileContents((previous) => ({ ...previous, [filePath]: edit.content || "" }));
-    setFiles((previous) => previous.some((file) => file.name === filePath)
-      ? previous
-      : [...previous, { name: filePath, lang, color }]);
-    setOpenTabs((previous) => previous.includes(filePath) ? previous : [...previous, filePath]);
-    setActiveFile(filePath);
-    showToast(`${filePath} added to workspace`);
+    try {
+      await workspaceApi.createFile(filePath, false);
+      await workspaceApi.writeFile(filePath, edit.content || "");
+      setFileContents((previous) => ({ ...previous, [filePath]: edit.content || "" }));
+      setFiles((previous) => previous.some((file) => file.name === filePath)
+        ? previous
+        : [...previous, { name: filePath, lang, color }]);
+      setOpenTabs((previous) => previous.includes(filePath) ? previous : [...previous, filePath]);
+      setActiveFile(filePath);
+      showToast(`${filePath} saved to workspace`);
+    } catch (error) {
+      showToast(`Could not save ${filePath}: ${error.message}`);
+    }
   }, []);
 
   // ── Multi-file context helper ──
@@ -1073,7 +1156,7 @@ export default function App() {
 
         {/* Sidebar */}
         {sidebarOpen && (
-          <div style={{ width: 200, background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.05)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
+          <div style={{ width: sidebarWidth, background: "#0d1117", borderRight: "1px solid rgba(255,255,255,0.05)", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
             <div style={{ padding: "10px 12px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 10, fontWeight: 600, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {NAV.find(n => n.id === activeTab)?.label}
@@ -1103,10 +1186,14 @@ export default function App() {
                         else if (name.endsWith(".c") || name.endsWith(".h")) { lang = "C"; color = "#659AD2"; }
                         else if (name.endsWith(".cpp") || name.endsWith(".c++")) { lang = "C++"; color = "#00599C"; }
                         else if (name.endsWith(".java")) { lang = "JAVA"; color = "#f89820"; }
-                        setFiles([...files, { name, lang, color }]);
-                        setFileContents(prev => ({ ...prev, [name]: "" }));
-                        setOpenTabs(prev => prev.includes(name) ? prev : [...prev, name]);
-                        setActiveFile(name);
+                        workspaceApi.createFile(name, false)
+                          .then(() => {
+                            setFiles(prev => [...prev, { name, lang, color }]);
+                            setFileContents(prev => ({ ...prev, [name]: "" }));
+                            setOpenTabs(prev => prev.includes(name) ? prev : [...prev, name]);
+                            setActiveFile(name);
+                          })
+                          .catch(error => showToast(`Could not create ${name}: ${error.message}`));
                       }
                     }}
                     style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
@@ -1157,6 +1244,25 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {sidebarOpen && (
+          <div
+            onPointerDown={handleMouseDownSidebarResize}
+            title="Drag to resize file explorer"
+            style={{
+              width: 6,
+              cursor: "col-resize",
+              background: isResizingSidebar ? "#7c3aed" : "transparent",
+              borderRight: "1px solid rgba(255,255,255,0.05)",
+              flexShrink: 0,
+              zIndex: 10,
+              userSelect: "none",
+              touchAction: "none",
+            }}
+            onPointerEnter={(event) => { event.currentTarget.style.background = "rgba(139,92,246,0.45)"; }}
+            onPointerLeave={(event) => { if (!isResizingSidebar) event.currentTarget.style.background = "transparent"; }}
+          />
         )}
 
         {/* Code Editor + Terminal */}

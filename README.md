@@ -89,7 +89,11 @@ This project uses **Supabase** for authentication with support for Email/Passwor
    SUPABASE_ANON_KEY=your_supabase_publishable_key
    ```
 
-4. **Run the Application**
+4. **Enable persistent workspace files**
+   - Run [`supabase/workspace_files.sql`](supabase/workspace_files.sql) in the Supabase SQL editor.
+   - The backend uses each authenticated user's bearer token with Supabase Row Level Security, so no service-role key is needed.
+
+5. **Run the Application**
    - Start the backend: `cd backend && uvicorn app.main:app --reload`
    - Start the frontend: `cd frontend && npm run dev`
    - Navigate to `http://localhost:5173` and sign up or log in
