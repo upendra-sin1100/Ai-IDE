@@ -111,8 +111,18 @@ async def handle_terminal_websocket(websocket: WebSocket, workspace_dir: str) ->
 
     try:
         while True:
-            data = await websocket.receive_text()
-            await session.write_input(data)
+            raw_data = await websocket.receive_text()
+            try:
+                message = json.loads(raw_data)
+            except json.JSONDecodeError:
+                message = {"type": "input", "data": raw_data}
+
+            if message.get("type") == "resize":
+                continue
+            if message.get("type") == "input":
+                await session.write_input(message.get("data", ""))
+            else:
+                await session.write_input(raw_data)
     except WebSocketDisconnect:
         pass
     except Exception:

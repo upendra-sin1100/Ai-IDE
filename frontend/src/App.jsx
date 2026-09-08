@@ -5,7 +5,7 @@ import * as workspaceApi from "./api/workspace";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileCode, FileCode2, FileJson, FileText, Folder, FolderOpen, Moon, Sun } from "lucide-react";
+import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileText, Folder, FolderOpen, Moon, Sun } from "lucide-react";
 import "./App.css";
 
 const INITIAL_CODE = `# Welcome to AI IDE Pro
@@ -127,13 +127,15 @@ function langFromFile(name) {
 function fileBadge(name, color, size = 16) {
   const lowerName = name.toLowerCase();
   if (name.endsWith(".java")) return <Coffee size={size} color={color} strokeWidth={2.2} />;
-  if (name.endsWith(".c") || name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".c++")) {
-    return <FileCode2 size={size} color={color} strokeWidth={2.2} />;
-  }
-  if (lowerName.endsWith(".json")) return <FileJson size={size} color={color} strokeWidth={2.1} />;
-  if (/\.(js|jsx|ts|tsx|py|php|css|html)$/.test(lowerName)) return <FileCode size={size} color={color} strokeWidth={2.1} />;
-  if (lowerName.endsWith(".md") || lowerName.endsWith(".txt")) return <FileText size={size} color={color} strokeWidth={2.1} />;
-  if (lowerName.endsWith(".env") || lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) return <Braces size={size} color={color} strokeWidth={2.1} />;
+  const labels = [
+    [".c", "C"], [".h", "H"], [".cpp", "C++"], [".c++", "C++"],
+    [".json", "{}"], [".js", "JS"], [".jsx", "JSX"], [".ts", "TS"],
+    [".tsx", "TSX"], [".py", "PY"], [".php", "PHP"], [".css", "CSS"],
+    [".html", "HTML"], [".md", "MD"], [".txt", "TXT"], [".env", "ENV"],
+  ];
+  const label = labels.find(([extension]) => lowerName.endsWith(extension))?.[1];
+  if (label) return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: size + 4, height: size, color, fontSize: label.length > 3 ? 7 : 9, fontWeight: 800, fontFamily: "monospace", letterSpacing: "-0.04em" }}>{label}</span>;
+  if (lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) return <Braces size={size} color={color} strokeWidth={2.1} />;
   return <FileText size={size} color={color} strokeWidth={2.1} />;
 }
 
