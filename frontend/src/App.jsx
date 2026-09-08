@@ -81,15 +81,26 @@ function ExplorerDirectory({ directory, level, activeFile, onSelect, onRename, o
       {expanded && (
         <div>
           {childDirectories.map((child) => <ExplorerDirectory key={child.path} directory={child} level={level + 1} activeFile={activeFile} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}
-          {directory.files.map((file) => (
-            <div key={file.path} onClick={() => onSelect(file.path)} onMouseEnter={(event) => { event.currentTarget.dataset.hovered = "true"; }} onMouseLeave={(event) => { event.currentTarget.dataset.hovered = "false"; }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", paddingLeft: 28 + level * 12, cursor: "pointer", background: activeFile === file.path ? "rgba(139,92,246,0.1)" : "transparent", borderLeft: activeFile === file.path ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}>
-              <span style={{ display: "inline-flex", width: 18, flexShrink: 0, color: file.color }}>{fileBadge(file.name, file.color)}</span>
-              <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
-              <ExplorerActions onRename={() => onRename(file.path)} onDelete={() => onDelete(file.path)} />
-            </div>
-          ))}
+          {directory.files.map((file) => <ExplorerFileRow key={file.path} file={file} level={level} activeFile={activeFile} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+function ExplorerFileRow({ file, level = 0, activeFile, onSelect, onRename, onDelete }) {
+  const [hovered, setHovered] = useState(false);
+  const isActive = activeFile === file.path;
+  return (
+    <div
+      onClick={() => onSelect(file.path)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", paddingLeft: 28 + level * 12, cursor: "pointer", background: isActive ? "rgba(139,92,246,0.1)" : hovered ? "rgba(255,255,255,0.03)" : "transparent", borderLeft: isActive ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}
+    >
+      <span style={{ display: "inline-flex", width: 18, flexShrink: 0, color: file.color }}>{fileBadge(file.name, file.color)}</span>
+      <span style={{ fontSize: 12, color: isActive ? "#e2e8f0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+      {(hovered || isActive) && <ExplorerActions onRename={() => onRename(file.path)} onDelete={() => onDelete(file.path)} />}
     </div>
   );
 }
@@ -1331,11 +1342,17 @@ export default function App() {
                   />
                 ))}
                 {buildExplorerTree(files).files.map((file) => (
-                  <div key={file.path} onClick={() => { setActiveFile(file.path); setOpenTabs((previous) => previous.includes(file.path) ? previous : [...previous, file.path]); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px 5px 12px", cursor: "pointer" }}>
-                    <span style={{ width: 18, color: file.color }}>{fileBadge(file.name, file.color)}</span>
-                    <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280" }}>{file.name}</span>
-                    <ExplorerActions onRename={() => handleRenamePath(file.path)} onDelete={() => handleDeletePath(file.path)} />
-                  </div>
+                  <ExplorerFileRow
+                    key={file.path}
+                    file={file}
+                    activeFile={activeFile}
+                    onSelect={(path) => {
+                      setActiveFile(path);
+                      setOpenTabs((previous) => previous.includes(path) ? previous : [...previous, path]);
+                    }}
+                    onRename={handleRenamePath}
+                    onDelete={handleDeletePath}
+                  />
                 ))}
               </div>
             )}
