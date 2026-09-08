@@ -5,7 +5,7 @@ import * as workspaceApi from "./api/workspace";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileText, Folder, FolderOpen, Moon, Sun } from "lucide-react";
+import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileText, Folder, FolderOpen, Moon, Pencil, Sun, Trash2 } from "lucide-react";
 import "./App.css";
 
 const INITIAL_CODE = `# Welcome to AI IDE Pro
@@ -66,27 +66,44 @@ function buildExplorerTree(files) {
   return root;
 }
 
-function ExplorerDirectory({ directory, level, activeFile, onSelect }) {
+function ExplorerDirectory({ directory, level, activeFile, onSelect, onRename, onDelete }) {
   const [expanded, setExpanded] = useState(level < 1);
+  const [hovered, setHovered] = useState(false);
   const childDirectories = Object.values(directory.directories);
   return (
     <div>
-      <div onClick={() => setExpanded((value) => !value)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div onClick={() => setExpanded((value) => !value)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 6px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {expanded ? <FolderOpen size={14} color="#d6a84f" /> : <Folder size={14} color="#d6a84f" />}{directory.name}
+        {expanded ? <FolderOpen size={14} color="#d6a84f" /> : <Folder size={14} color="#d6a84f" />}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{directory.name}</span>
+        {hovered && <ExplorerActions onRename={() => onRename(directory.path)} onDelete={() => onDelete(directory.path)} />}
       </div>
       {expanded && (
         <div>
-          {childDirectories.map((child) => <ExplorerDirectory key={child.path} directory={child} level={level + 1} activeFile={activeFile} onSelect={onSelect} />)}
+          {childDirectories.map((child) => <ExplorerDirectory key={child.path} directory={child} level={level + 1} activeFile={activeFile} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}
           {directory.files.map((file) => (
-            <div key={file.path} onClick={() => onSelect(file.path)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", paddingLeft: 28 + level * 12, cursor: "pointer", background: activeFile === file.path ? "rgba(139,92,246,0.1)" : "transparent", borderLeft: activeFile === file.path ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}>
+            <div key={file.path} onClick={() => onSelect(file.path)} onMouseEnter={(event) => { event.currentTarget.dataset.hovered = "true"; }} onMouseLeave={(event) => { event.currentTarget.dataset.hovered = "false"; }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", paddingLeft: 28 + level * 12, cursor: "pointer", background: activeFile === file.path ? "rgba(139,92,246,0.1)" : "transparent", borderLeft: activeFile === file.path ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}>
               <span style={{ display: "inline-flex", width: 18, flexShrink: 0, color: file.color }}>{fileBadge(file.name, file.color)}</span>
               <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+              <ExplorerActions onRename={() => onRename(file.path)} onDelete={() => onDelete(file.path)} />
             </div>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function ExplorerActions({ onRename, onDelete }) {
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 2, marginLeft: "auto", flexShrink: 0 }} onClick={(event) => event.stopPropagation()}>
+      <button type="button" title="Rename" onClick={onRename} style={{ display: "flex", padding: 2, border: 0, background: "transparent", color: "#64748b", cursor: "pointer" }}>
+        <Pencil size={12} />
+      </button>
+      <button type="button" title="Delete" onClick={onDelete} style={{ display: "flex", padding: 2, border: 0, background: "transparent", color: "#f87171", cursor: "pointer" }}>
+        <Trash2 size={12} />
+      </button>
+    </span>
   );
 }
 
@@ -663,6 +680,44 @@ export default function App() {
   const showToast = (message) => {
     setToast({ visible: true, message });
     setTimeout(() => setToast({ visible: false, message: "" }), 2200);
+  };
+
+  const handleRenamePath = async (oldPath) => {
+    const currentName = oldPath.split("/").pop() || oldPath;
+    const nextName = window.prompt("Rename to:", currentName)?.trim();
+    if (!nextName || nextName === currentName || nextName.includes("/")) return;
+    const parentPath = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/")) : "";
+    const newPath = parentPath ? `${parentPath}/${nextName}` : nextName;
+    try {
+      await workspaceApi.renameFile(oldPath, newPath);
+      const isFolder = files.some((file) => file.name.startsWith(`${oldPath}/`));
+      const pathMap = (path) => isFolder && (path === oldPath || path.startsWith(`${oldPath}/`))
+        ? `${newPath}${path.slice(oldPath.length)}`
+        : path === oldPath ? newPath : path;
+      setFiles((previous) => previous.map((file) => ({ ...file, name: pathMap(file.name) })));
+      setFileContents((previous) => Object.fromEntries(Object.entries(previous).map(([path, content]) => [pathMap(path), content])));
+      setOpenTabs((previous) => previous.map(pathMap));
+      setActiveFile((previous) => pathMap(previous));
+      showToast(`${oldPath} renamed to ${newPath}`);
+    } catch (error) {
+      showToast(`Could not rename ${oldPath}: ${error.message}`);
+    }
+  };
+
+  const handleDeletePath = async (path) => {
+    if (!window.confirm(`Delete ${path}? This cannot be undone.`)) return;
+    try {
+      await workspaceApi.deleteFile(path);
+      const isFolder = files.some((file) => file.name.startsWith(`${path}/`));
+      const isInside = (candidate) => candidate === path || (isFolder && candidate.startsWith(`${path}/`));
+      setFiles((previous) => previous.filter((file) => !isInside(file.name)));
+      setFileContents((previous) => Object.fromEntries(Object.entries(previous).filter(([filePath]) => !isInside(filePath))));
+      setOpenTabs((previous) => previous.filter((filePath) => !isInside(filePath)));
+      setActiveFile((previous) => isInside(previous) ? "" : previous);
+      showToast(`${path} deleted`);
+    } catch (error) {
+      showToast(`Could not delete ${path}: ${error.message}`);
+    }
   };
 
   // ── Insert code at cursor position (append mode) ──
@@ -1274,12 +1329,15 @@ export default function App() {
                       setActiveFile(path);
                       setOpenTabs((previous) => previous.includes(path) ? previous : [...previous, path]);
                     }}
+                    onRename={handleRenamePath}
+                    onDelete={handleDeletePath}
                   />
                 ))}
                 {buildExplorerTree(files).files.map((file) => (
-                  <div key={file.path} onClick={() => { setActiveFile(file.path); setOpenTabs((previous) => previous.includes(file.path) ? previous : [...previous, file.path]); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer" }}>
+                  <div key={file.path} onClick={() => { setActiveFile(file.path); setOpenTabs((previous) => previous.includes(file.path) ? previous : [...previous, file.path]); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px 5px 12px", cursor: "pointer" }}>
                     <span style={{ width: 18, color: file.color }}>{fileBadge(file.name, file.color)}</span>
                     <span style={{ fontSize: 12, color: activeFile === file.path ? "#e2e8f0" : "#6b7280" }}>{file.name}</span>
+                    <ExplorerActions onRename={() => handleRenamePath(file.path)} onDelete={() => handleDeletePath(file.path)} />
                   </div>
                 ))}
               </div>
