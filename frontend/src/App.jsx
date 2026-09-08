@@ -68,15 +68,13 @@ function buildExplorerTree(files) {
 
 function ExplorerDirectory({ directory, level, activeFile, onSelect, onRename, onDelete }) {
   const [expanded, setExpanded] = useState(level < 1);
-  const [hovered, setHovered] = useState(false);
   const childDirectories = Object.values(directory.directories);
   return (
     <div>
-      <div onClick={() => setExpanded((value) => !value)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 6px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div onClick={() => setExpanded((value) => !value)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 6px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         {expanded ? <FolderOpen size={14} color="#d6a84f" /> : <Folder size={14} color="#d6a84f" />}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{directory.name}</span>
-        {hovered && <ExplorerActions onRename={() => onRename(directory.path)} onDelete={() => onDelete(directory.path)} />}
       </div>
       {expanded && (
         <div>
@@ -89,18 +87,15 @@ function ExplorerDirectory({ directory, level, activeFile, onSelect, onRename, o
 }
 
 function ExplorerFileRow({ file, level = 0, activeFile, onSelect, onRename, onDelete }) {
-  const [hovered, setHovered] = useState(false);
   const isActive = activeFile === file.path;
   return (
     <div
       onClick={() => onSelect(file.path)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", paddingLeft: 28 + level * 12, cursor: "pointer", background: isActive ? "rgba(139,92,246,0.1)" : hovered ? "rgba(255,255,255,0.03)" : "transparent", borderLeft: isActive ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", paddingLeft: 28 + level * 12, cursor: "pointer", background: isActive ? "rgba(139,92,246,0.1)" : "transparent", borderLeft: isActive ? "2px solid #7c3aed" : "2px solid transparent", minWidth: 0 }}
     >
       <span style={{ display: "inline-flex", width: 18, flexShrink: 0, color: file.color }}>{fileBadge(file.name, file.color)}</span>
       <span style={{ fontSize: 12, color: isActive ? "#e2e8f0" : "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
-      {(hovered || isActive) && <ExplorerActions onRename={() => onRename(file.path)} onDelete={() => onDelete(file.path)} />}
+      {isActive && <ExplorerActions onRename={() => onRename(file.path)} onDelete={() => onDelete(file.path)} />}
     </div>
   );
 }
