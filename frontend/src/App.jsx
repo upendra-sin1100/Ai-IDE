@@ -5,7 +5,7 @@ import * as workspaceApi from "./api/workspace";
 import { useAuth } from "./context/AuthContext";
 import { AuthScreen } from "./components/Auth/AuthScreen";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { Bot, Coffee, FileCode2 } from "lucide-react";
+import { Bot, Braces, ChevronDown, ChevronRight, Coffee, FileCode, FileCode2, FileJson, FileText, Folder, FolderOpen, Moon, Sun } from "lucide-react";
 import "./App.css";
 
 const INITIAL_CODE = `# Welcome to AI IDE Pro
@@ -71,9 +71,9 @@ function ExplorerDirectory({ directory, level, activeFile, onSelect }) {
   const childDirectories = Object.values(directory.directories);
   return (
     <div>
-      <div onClick={() => setExpanded((value) => !value)} style={{ padding: "5px 10px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        <span style={{ display: "inline-block", width: 14 }}>{expanded ? "⌄" : "›"}</span>
-        <span style={{ color: "#d6a84f", marginRight: 6 }}>▰</span>{directory.name}
+      <div onClick={() => setExpanded((value) => !value)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", paddingLeft: 12 + level * 12, color: "#9ca3af", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {expanded ? <FolderOpen size={14} color="#d6a84f" /> : <Folder size={14} color="#d6a84f" />}{directory.name}
       </div>
       {expanded && (
         <div>
@@ -125,11 +125,16 @@ function langFromFile(name) {
 }
 
 function fileBadge(name, color, size = 16) {
+  const lowerName = name.toLowerCase();
   if (name.endsWith(".java")) return <Coffee size={size} color={color} strokeWidth={2.2} />;
   if (name.endsWith(".c") || name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".c++")) {
     return <FileCode2 size={size} color={color} strokeWidth={2.2} />;
   }
-  return <span style={{ fontSize: 9.5, fontWeight: 700, color, fontFamily: "monospace", minWidth: 18 }}>{name.split(".").pop()?.toUpperCase() || "TXT"}</span>;
+  if (lowerName.endsWith(".json")) return <FileJson size={size} color={color} strokeWidth={2.1} />;
+  if (/\.(js|jsx|ts|tsx|py|php|css|html)$/.test(lowerName)) return <FileCode size={size} color={color} strokeWidth={2.1} />;
+  if (lowerName.endsWith(".md") || lowerName.endsWith(".txt")) return <FileText size={size} color={color} strokeWidth={2.1} />;
+  if (lowerName.endsWith(".env") || lowerName.endsWith(".yaml") || lowerName.endsWith(".yml")) return <Braces size={size} color={color} strokeWidth={2.1} />;
+  return <FileText size={size} color={color} strokeWidth={2.1} />;
 }
 
 function parseCreateFiles(content) {
@@ -493,6 +498,7 @@ export default function App() {
     return saved ? Math.min(360, Math.max(160, parseInt(saved, 10))) : 200;
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem("ai_ide_theme") === "light");
 
   const handleMouseDownResize = (e) => {
     e.preventDefault();
@@ -995,6 +1001,14 @@ export default function App() {
 
   const currentModel = modelsList.find(m => m.id === selectedModelId) ?? modelsList[0];
 
+  const toggleTheme = () => {
+    setIsLightMode((current) => {
+      const next = !current;
+      localStorage.setItem("ai_ide_theme", next ? "light" : "dark");
+      return next;
+    });
+  };
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0d1117', color: '#e2e8f0' }}>
@@ -1012,6 +1026,7 @@ export default function App() {
       height: "100vh", width: "100vw", display: "flex", flexDirection: "column",
       background: "#0d1117", color: "#c9d1d9",
       fontFamily: "'DM Sans', 'Segoe UI', system-ui, sans-serif", overflow: "hidden",
+      filter: isLightMode ? "invert(0.93) hue-rotate(180deg)" : "none",
     }}>
 
       <style>{`
@@ -1184,6 +1199,13 @@ export default function App() {
             </button>
           ))}
           <div style={{ marginTop: "auto", marginBottom: 8 }}>
+            <button
+              title={isLightMode ? "Use dark mode" : "Use light mode"}
+              onClick={toggleTheme}
+              style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: "#4b5563" }}
+            >
+              {isLightMode ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
             <button style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: "#4b5563" }}
               onMouseEnter={e => e.currentTarget.style.color = "#9ca3af"}
               onMouseLeave={e => e.currentTarget.style.color = "#4b5563"}>
