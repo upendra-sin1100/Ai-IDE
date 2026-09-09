@@ -179,27 +179,178 @@ function parseCreateFiles(content) {
   return { visibleContent, edits };
 }
 
-function CreateFileCard({ edit, onCreate }) {
+function CreateFileCard({ edit, onCreate, onInsert, onReplace, fileExists }) {
+  const [copied, setCopied] = useState(false);
+  const [inserted, setInserted] = useState(false);
+  const [replaced, setReplaced] = useState(false);
+  const [added, setAdded] = useState(false);
+
   const extension = edit.file_path.split(".").pop()?.toLowerCase();
   const color = extension === "java" ? "#f89820" : ["c", "h", "cpp", "cc", "cxx"].includes(extension) ? "#659ad2" : "#a78bfa";
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(edit.content || "");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const handleInsert = () => {
+    if (onInsert) onInsert(edit.file_path, edit.content || "");
+    setInserted(true);
+    setTimeout(() => setInserted(false), 2000);
+  };
+
+  const handleReplace = () => {
+    if (onReplace) onReplace(edit.file_path, edit.content || "");
+    setReplaced(true);
+    setTimeout(() => setReplaced(false), 2000);
+  };
+
+  const handleAdd = () => {
+    if (onCreate) onCreate(edit);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 2000);
+  };
+
   return (
-    <div style={{ margin: "10px 0", border: "1px solid rgba(34,197,94,0.35)", borderRadius: 9, overflow: "hidden", background: "rgba(15,23,32,0.9)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 11px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#d1fae5", fontWeight: 600 }}>
+    <div style={{
+      margin: "10px 0",
+      border: fileExists ? "1px solid rgba(251,191,36,0.35)" : "1px solid rgba(34,197,94,0.35)",
+      borderRadius: 9,
+      overflow: "hidden",
+      background: "rgba(15,23,32,0.9)",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        padding: "8px 11px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        background: "rgba(255,255,255,0.03)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, color: fileExists ? "#fde68a" : "#d1fae5", fontWeight: 600, fontSize: 12 }}>
           {fileBadge(edit.file_path, color, 15)}
-          <span>New file: {edit.file_path}</span>
+          <span>{fileExists ? `File: ${edit.file_path}` : `New file: ${edit.file_path}`}</span>
+          {fileExists && (
+            <span style={{
+              fontSize: 10,
+              padding: "1px 6px",
+              borderRadius: 4,
+              background: "rgba(251,191,36,0.15)",
+              color: "#fbbf24",
+              border: "1px solid rgba(251,191,36,0.3)",
+              fontWeight: 500
+            }}>
+              Exists
+            </span>
+          )}
         </div>
-        <button onClick={() => onCreate(edit)} style={{ border: 0, borderRadius: 5, padding: "4px 8px", background: "#16a34a", color: "white", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-          Add to workspace
+        <button
+          onClick={handleCopy}
+          style={{
+            display: "flex", alignItems: "center", gap: 4,
+            padding: "3px 8px", borderRadius: 5,
+            border: "1px solid rgba(255,255,255,0.1)",
+            background: "transparent",
+            color: copied ? "#a78bfa" : "#9ca3af",
+            fontSize: 11, cursor: "pointer", fontFamily: "inherit"
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre style={{ margin: 0, padding: "9px 11px", maxHeight: 180, overflow: "auto", color: "#cbd5e1", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{edit.content}</pre>
+
+      <pre style={{
+        margin: 0,
+        padding: "9px 11px",
+        maxHeight: 180,
+        overflow: "auto",
+        color: "#cbd5e1",
+        fontSize: 11,
+        lineHeight: 1.55,
+        whiteSpace: "pre-wrap",
+        fontFamily: "'JetBrains Mono','Fira Code',monospace"
+      }}>{edit.content}</pre>
+
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 6,
+        padding: "6px 10px",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(0,0,0,0.2)"
+      }}>
+        {fileExists ? (
+          <>
+            <button
+              onClick={handleInsert}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                border: "1px solid rgba(34,197,94,0.4)", borderRadius: 5,
+                padding: "4px 10px",
+                background: inserted ? "rgba(34,197,94,0.3)" : "rgba(34,197,94,0.12)",
+                color: "#4ade80", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                transition: "all 0.15s"
+              }}
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg>
+              {inserted ? "Inserted!" : "Insert"}
+            </button>
+
+            <button
+              onClick={handleReplace}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                border: "1px solid rgba(251,191,36,0.4)", borderRadius: 5,
+                padding: "4px 10px",
+                background: replaced ? "rgba(251,191,36,0.3)" : "rgba(251,191,36,0.12)",
+                color: "#fbbf24", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                transition: "all 0.15s"
+              }}
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" strokeLinecap="round" /></svg>
+              {replaced ? "Replaced!" : "Replace"}
+            </button>
+
+            <button
+              onClick={handleAdd}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                border: 0, borderRadius: 5,
+                padding: "4px 10px",
+                background: added ? "#15803d" : "#16a34a",
+                color: "white", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                transition: "all 0.15s"
+              }}
+            >
+              {added ? "Saved!" : "Save file"}
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={handleAdd}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              border: 0, borderRadius: 5,
+              padding: "4px 10px",
+              background: added ? "#15803d" : "#16a34a",
+              color: "white", cursor: "pointer", fontSize: 11, fontWeight: 600,
+              transition: "all 0.15s"
+            }}
+          >
+            {added ? "Added!" : "Add to workspace"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Renders message content with code blocks as suggestion cards ──
-function MessageContent({ content, proposedEdits = [], onAccept, onReplace, onCreateFile }) {
+function MessageContent({ content, proposedEdits = [], onAccept, onReplace, onCreateFile, onInsertFile, onReplaceFile, filesList = [] }) {
   if (!content) return null;
 
   const parsedFiles = parseCreateFiles(content);
@@ -240,9 +391,19 @@ function MessageContent({ content, proposedEdits = [], onAccept, onReplace, onCr
           />
         );
       })}
-      {fileEdits.map((edit) => (
-        <CreateFileCard key={edit.file_path} edit={edit} onCreate={onCreateFile} />
-      ))}
+      {fileEdits.map((edit) => {
+        const fileExists = filesList.some((f) => f.name === edit.file_path || f.path === edit.file_path);
+        return (
+          <CreateFileCard
+            key={edit.file_path}
+            edit={edit}
+            onCreate={onCreateFile}
+            onInsert={onInsertFile}
+            onReplace={onReplaceFile}
+            fileExists={fileExists}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -428,7 +589,7 @@ function ThinkingBubble({ text }) {
   );
 }
 
-function Message({ msg, onAcceptCode, onReplaceCode, onCreateFile }) {
+function Message({ msg, onAcceptCode, onReplaceCode, onCreateFile, onInsertFile, onReplaceFile, filesList }) {
   const isUser = msg.role === "user";
   const hasCode = !isUser && msg.content && /```[\s\S]*?```/.test(msg.content);
 
@@ -456,6 +617,9 @@ function Message({ msg, onAcceptCode, onReplaceCode, onCreateFile }) {
               onAccept={onAcceptCode}
               onReplace={onReplaceCode}
               onCreateFile={onCreateFile}
+              onInsertFile={onInsertFile}
+              onReplaceFile={onReplaceFile}
+              filesList={filesList}
             />
           )}
           {msg.streaming && !hasCode && (
@@ -838,9 +1002,16 @@ export default function App() {
     else if (lowerName.endsWith(".php")) { lang = "PHP"; color = "#777bb4"; }
     else if (lowerName.endsWith(".py")) { lang = "PY"; color = "#3572a5"; }
     else if (lowerName.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
+    else if (lowerName.endsWith(".ts")) { lang = "TS"; color = "#3178c6"; }
+    else if (lowerName.endsWith(".css")) { lang = "CSS"; color = "#264de4"; }
+    else if (lowerName.endsWith(".html")) { lang = "HTML"; color = "#e34f26"; }
 
     try {
-      await workspaceApi.createFile(filePath, false);
+      try {
+        await workspaceApi.createFile(filePath, false);
+      } catch {
+        /* File might already exist */
+      }
       await workspaceApi.writeFile(filePath, edit.content || "");
       setFileContents((previous) => ({ ...previous, [filePath]: edit.content || "" }));
       setFiles((previous) => previous.some((file) => file.name === filePath)
@@ -848,11 +1019,94 @@ export default function App() {
         : [...previous, { name: filePath, lang, color }]);
       setOpenTabs((previous) => previous.includes(filePath) ? previous : [...previous, filePath]);
       setActiveFile(filePath);
-      showToast(`${filePath} saved to workspace`);
+      showToast(`${filePath} saved to workspace ✓`);
     } catch (error) {
       showToast(`Could not save ${filePath}: ${error.message}`);
     }
   }, []);
+
+  const handleInsertFile = useCallback(async (filePath, snippet) => {
+    try {
+      const exists = files.some(f => f.name === filePath) || fileContents[filePath] !== undefined;
+      let currentContent = fileContents[filePath];
+      if (currentContent === undefined && exists) {
+        try {
+          const res = await workspaceApi.readFile(filePath);
+          currentContent = res.content;
+        } catch {
+          currentContent = "";
+        }
+      }
+      const newContent = currentContent ? currentContent + "\n\n" + snippet : snippet;
+
+      if (!exists) {
+        try {
+          await workspaceApi.createFile(filePath, false);
+        } catch {
+          /* File might exist on disk */
+        }
+        const lowerName = filePath.split("/").pop().toLowerCase();
+        let lang = "TXT", color = "#9ca3af";
+        if (lowerName.endsWith(".py")) { lang = "PY"; color = "#3572a5"; }
+        else if (lowerName.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
+        else if (lowerName.endsWith(".ts")) { lang = "TS"; color = "#3178c6"; }
+        else if (lowerName.endsWith(".css")) { lang = "CSS"; color = "#264de4"; }
+        else if (lowerName.endsWith(".html")) { lang = "HTML"; color = "#e34f26"; }
+        else if (lowerName.endsWith(".java")) { lang = "JAVA"; color = "#f89820"; }
+        else if (lowerName.endsWith(".c") || lowerName.endsWith(".h")) { lang = "C"; color = "#659ad2"; }
+        else if (lowerName.endsWith(".cpp")) { lang = "C++"; color = "#00599c"; }
+        setFiles(prev => prev.some(f => f.name === filePath) ? prev : [...prev, { name: filePath, lang, color }]);
+      }
+
+      await workspaceApi.writeFile(filePath, newContent);
+      setFileContents(prev => ({ ...prev, [filePath]: newContent }));
+      setOpenTabs(prev => prev.includes(filePath) ? prev : [...prev, filePath]);
+      setActiveFile(filePath);
+
+      if (editorRef.current && activeFile === filePath) {
+        editorRef.current.setValue(newContent);
+      }
+      showToast(`Inserted code into ${filePath} ✓`);
+    } catch (error) {
+      showToast(`Could not insert into ${filePath}: ${error.message}`);
+    }
+  }, [files, fileContents, activeFile]);
+
+  const handleReplaceFile = useCallback(async (filePath, snippet) => {
+    try {
+      const exists = files.some(f => f.name === filePath) || fileContents[filePath] !== undefined;
+      if (!exists) {
+        try {
+          await workspaceApi.createFile(filePath, false);
+        } catch {
+          /* File might exist on disk */
+        }
+        const lowerName = filePath.split("/").pop().toLowerCase();
+        let lang = "TXT", color = "#9ca3af";
+        if (lowerName.endsWith(".py")) { lang = "PY"; color = "#3572a5"; }
+        else if (lowerName.endsWith(".js")) { lang = "JS"; color = "#f0db4f"; }
+        else if (lowerName.endsWith(".ts")) { lang = "TS"; color = "#3178c6"; }
+        else if (lowerName.endsWith(".css")) { lang = "CSS"; color = "#264de4"; }
+        else if (lowerName.endsWith(".html")) { lang = "HTML"; color = "#e34f26"; }
+        else if (lowerName.endsWith(".java")) { lang = "JAVA"; color = "#f89820"; }
+        else if (lowerName.endsWith(".c") || lowerName.endsWith(".h")) { lang = "C"; color = "#659ad2"; }
+        else if (lowerName.endsWith(".cpp")) { lang = "C++"; color = "#00599c"; }
+        setFiles(prev => prev.some(f => f.name === filePath) ? prev : [...prev, { name: filePath, lang, color }]);
+      }
+
+      await workspaceApi.writeFile(filePath, snippet);
+      setFileContents(prev => ({ ...prev, [filePath]: snippet }));
+      setOpenTabs(prev => prev.includes(filePath) ? prev : [...prev, filePath]);
+      setActiveFile(filePath);
+
+      if (editorRef.current && activeFile === filePath) {
+        editorRef.current.setValue(snippet);
+      }
+      showToast(`Replaced content of ${filePath} ✓`);
+    } catch (error) {
+      showToast(`Could not replace content in ${filePath}: ${error.message}`);
+    }
+  }, [files, fileContents, activeFile]);
 
   // ── Multi-file context helper ──
   const getOpenAndRelatedFiles = useCallback(() => {
@@ -1724,6 +1978,9 @@ export default function App() {
                   onAcceptCode={handleAcceptCode}
                   onReplaceCode={handleReplaceCode}
                   onCreateFile={handleCreateFile}
+                  onInsertFile={handleInsertFile}
+                  onReplaceFile={handleReplaceFile}
+                  filesList={files}
                 />
               ))}
               {isTyping && <TypingDots />}

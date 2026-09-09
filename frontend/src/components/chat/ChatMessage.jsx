@@ -4,9 +4,9 @@ import { Check, X, Copy, FilePlus, FileEdit, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 export function ChatMessage({ message }) {
-  const { acceptProposedEdit } = useWorkspace();
-  const [applied, setApplied] = useState(false);
-  const [rejected, setRejected] = useState(false);
+  const { acceptProposedEdit, insertProposedEdit, replaceProposedEdit, fileContents } = useWorkspace();
+  const [applied, setApplied] = useState({});
+  const [rejected, setRejected] = useState({});
   const [copied, setCopied] = useState(false);
 
   const isAssistant = message.role === "assistant";
@@ -19,7 +19,19 @@ export function ChatMessage({ message }) {
   const handleAccept = async (editItem) => {
     if (!editItem) return;
     await acceptProposedEdit(editItem);
-    setApplied((prev) => ({ ...prev, [editItem.file_path]: true }));
+    setApplied((prev) => ({ ...prev, [editItem.file_path]: "Added to workspace" }));
+  };
+
+  const handleInsert = async (editItem) => {
+    if (!editItem) return;
+    await insertProposedEdit(editItem);
+    setApplied((prev) => ({ ...prev, [editItem.file_path]: "Inserted into file" }));
+  };
+
+  const handleReplace = async (editItem) => {
+    if (!editItem) return;
+    await replaceProposedEdit(editItem);
+    setApplied((prev) => ({ ...prev, [editItem.file_path]: "Replaced file content" }));
   };
 
   const handleReject = (editItem) => {
@@ -53,14 +65,17 @@ export function ChatMessage({ message }) {
       {/* Proposed Edit / Create File Cards */}
       {edits.map((edit, idx) => {
         if (!edit || rejected[edit.file_path]) return null;
-        const isFileApplied = Boolean(applied[edit.file_path]);
+        const appliedStatus = applied[edit.file_path];
+        const fileExists = fileContents[edit.file_path] !== undefined;
 
         return (
-          <div key={idx} className="mt-2 border border-slate-700/80 bg-slate-950 rounded-lg overflow-hidden font-mono">
+          <div key={idx} className={`mt-2 border ${fileExists ? "border-amber-500/40 bg-slate-950" : "border-slate-700/80 bg-slate-950"} rounded-lg overflow-hidden font-mono`}>
             <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-[11px]">
               <div className="flex items-center gap-1.5 font-semibold text-slate-200">
-                <FilePlus size={14} className="text-emerald-400" />
-                <span className="text-emerald-300">Create file: {edit.file_path}</span>
+                <FilePlus size={14} className={fileExists ? "text-amber-400" : "text-emerald-400"} />
+                <span className={fileExists ? "text-amber-300" : "text-emerald-300"}>
+                  {fileExists ? `File: ${edit.file_path} (exists)` : `New file: ${edit.file_path}`}
+                </span>
               </div>
 
               <button
@@ -77,12 +92,12 @@ export function ChatMessage({ message }) {
               {edit.diff || edit.content}
             </div>
 
-            {/* Accept / Reject controls */}
+            {/* Actions controls */}
             <div className="flex items-center justify-end gap-2 px-3 py-2 bg-slate-900/80 border-t border-slate-800">
-              {isFileApplied ? (
+              {appliedStatus ? (
                 <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
                   <Check size={13} />
-                  File created & saved!
+                  {appliedStatus}!
                 </span>
               ) : (
                 <>
@@ -93,13 +108,38 @@ export function ChatMessage({ message }) {
                     <X size={12} />
                     Reject
                   </button>
-                  <button
-                    onClick={() => handleAccept(edit)}
-                    className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors shadow-sm"
-                  >
-                    <Check size={13} />
-                    Accept
-                  </button>
+
+                  {fileExists ? (
+                    <>
+                      <button
+                        onClick={() => handleInsert(edit)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-medium transition-colors"
+                      >
+                        Insert
+                      </button>
+                      <button
+                        onClick={() => handleReplace(edit)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-medium transition-colors"
+                      >
+                        Replace
+                      </button>
+                      <button
+                        onClick={() => handleAccept(edit)}
+                        className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors shadow-sm"
+                      >
+                        <Check size={13} />
+                        Save File
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleAccept(edit)}
+                      className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors shadow-sm"
+                    >
+                      <Check size={13} />
+                      Add to workspace
+                    </button>
+                  )}
                 </>
               )}
             </div>

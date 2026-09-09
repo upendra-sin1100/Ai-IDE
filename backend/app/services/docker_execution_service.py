@@ -187,6 +187,7 @@ class DockerExecutionService:
         self,
         language: str,
         file_name: str,
+        code: str = "",
     ) -> tuple[str, str, str]:
         language = language.lower().strip()
 
@@ -212,9 +213,19 @@ class DockerExecutionService:
             )
 
         if language == "java":
+            class_name = "Main"
+            if code:
+                match = re.search(r"public\s+class\s+(\w+)", code)
+                if match:
+                    class_name = match.group(1)
+                elif file_name and file_name.endswith(".java") and Path(file_name).stem:
+                    class_name = Path(file_name).stem
+            elif file_name and file_name.endswith(".java") and Path(file_name).stem:
+                class_name = Path(file_name).stem
+
             return (
                 self.IMAGES["java"],
-                "Main.java",
+                f"{class_name}.java",
                 "",
             )
 
@@ -269,9 +280,12 @@ class DockerExecutionService:
         file_name: str = "main.py",
         interactive: bool = False,
     ) -> DockerProcess:
+        code = self._normalize_source(language, code)
+
         image, target_file, command = self._language_config(
             language,
             Path(file_name).name,
+            code=code,
         )
 
         execution_dir = tempfile.mkdtemp(prefix="ai_ide_docker_")
@@ -280,7 +294,6 @@ class DockerExecutionService:
         container_name = None
 
         try:
-            code = self._normalize_source(language, code)
             target_path.write_text(code, encoding="utf-8")
 
             # Pulling here makes first-use behavior predictable.

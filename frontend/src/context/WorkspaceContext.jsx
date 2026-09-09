@@ -176,6 +176,37 @@ export function WorkspaceProvider({ children }) {
     }
   }, [openTabs, refreshTree]);
 
+  const insertProposedEdit = useCallback(async ({ file_path, content }) => {
+    setError(null);
+    try {
+      let current = fileContents[file_path];
+      if (current === undefined) {
+        try {
+          const res = await workspaceApi.readFile(file_path);
+          current = res.content;
+        } catch {
+          current = "";
+          try { await workspaceApi.createFile(file_path, false); } catch {}
+        }
+      }
+      const newContent = current ? current + "\n\n" + content : content;
+      await workspaceApi.writeFile(file_path, newContent);
+      setFileContents((prev) => ({ ...prev, [file_path]: newContent }));
+      setDirtyFiles((prev) => ({ ...prev, [file_path]: false }));
+      if (!openTabs.includes(file_path)) {
+        setOpenTabs((prev) => [...prev, file_path]);
+      }
+      setActiveFilePath(file_path);
+      refreshTree();
+    } catch (err) {
+      setError(`Failed to insert edit into ${file_path}: ${err.message}`);
+    }
+  }, [fileContents, openTabs, refreshTree]);
+
+  const replaceProposedEdit = useCallback(async ({ file_path, content }) => {
+    return acceptProposedEdit({ file_path, content });
+  }, [acceptProposedEdit]);
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -196,6 +227,8 @@ export function WorkspaceProvider({ children }) {
         deleteExistingFile,
         renameExistingFile,
         acceptProposedEdit,
+        insertProposedEdit,
+        replaceProposedEdit,
       }}
     >
       {children}
