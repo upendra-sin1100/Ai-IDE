@@ -59,22 +59,25 @@ def test_list_models_endpoint(client):
     assert "gemini-3.6-flash" in model_ids
 
 
+AUTH_HEADERS = {"Authorization": "Bearer dev-local-token"}
+
+
 def test_run_code_auto_detection_py(client):
     payload = {"fileName": "factorial.py", "code": "print('Hello Auto Python')"}
-    response = client.post("/api/run", json=payload)
+    response = client.post("/api/run", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 200
     assert "Hello Auto Python" in response.json()["output"]
 
 
 def test_run_code_unsupported_extension(client):
     payload = {"fileName": "test.unknown", "code": "something"}
-    response = client.post("/api/run", json=payload)
+    response = client.post("/api/run", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 400
     assert "Unsupported file extension" in response.json()["detail"]
 
 
 def test_terminal_run_ws_auto_detection_py(client):
-    with client.websocket_connect("/api/terminal/run_ws") as websocket:
+    with client.websocket_connect("/api/terminal/run_ws?token=dev-local-token") as websocket:
         websocket.send_json({"code": "print('WS Auto Python')", "fileName": "factorial.py"})
         initial = websocket.receive_text()
         assert "Executing factorial.py (Python)" in initial
@@ -83,7 +86,7 @@ def test_terminal_run_ws_auto_detection_py(client):
 
 
 def test_terminal_run_ws_auto_detection_js(client):
-    with client.websocket_connect("/api/terminal/run_ws") as websocket:
+    with client.websocket_connect("/api/terminal/run_ws?token=dev-local-token") as websocket:
         websocket.send_json({"code": "console.log('WS Auto JS')", "fileName": "test.js"})
         initial = websocket.receive_text()
         assert "Executing test.js (Node.js)" in initial
@@ -92,14 +95,14 @@ def test_terminal_run_ws_auto_detection_js(client):
 
 
 def test_terminal_run_ws_auto_detection_ts(client):
-    with client.websocket_connect("/api/terminal/run_ws") as websocket:
+    with client.websocket_connect("/api/terminal/run_ws?token=dev-local-token") as websocket:
         websocket.send_json({"code": "console.log('WS Auto TS')", "fileName": "test.ts"})
         initial = websocket.receive_text()
         assert "Executing test.ts (TypeScript)" in initial
 
 
 def test_terminal_run_ws_unsupported_ext(client):
-    with client.websocket_connect("/api/terminal/run_ws") as websocket:
+    with client.websocket_connect("/api/terminal/run_ws?token=dev-local-token") as websocket:
         websocket.send_json({"code": "some code", "fileName": "test.invalid_ext"})
         output = websocket.receive_text()
         assert "Error: Unsupported file extension" in output

@@ -512,7 +512,8 @@ export default function App() {
     "hello.py": INITIAL_CODE,
   });
 
-  // Resizable AI Copilot Chat panel width
+  // Resizable AI Copilot Chat panel width & visibility
+  const [showChat, setShowChat] = useState(true);
   const [chatWidth, setChatWidth] = useState(() => {
     const saved = localStorage.getItem("ai_ide_chat_width");
     return saved ? Math.min(600, Math.max(260, parseInt(saved, 10))) : 340;
@@ -524,6 +525,36 @@ export default function App() {
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem("ai_ide_theme") === "light");
+
+  // Resizable Terminal drawer height
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    const saved = localStorage.getItem("ai_ide_terminal_height");
+    return saved ? Math.min(600, Math.max(100, parseInt(saved, 10))) : 240;
+  });
+  const [isResizingTerminal, setIsResizingTerminal] = useState(false);
+
+  const handleMouseDownTerminalResize = (e) => {
+    e.preventDefault();
+    setIsResizingTerminal(true);
+    const startY = e.clientY;
+    const startHeight = terminalHeight;
+
+    const handlePointerMove = (moveEvent) => {
+      const deltaY = startY - moveEvent.clientY;
+      const newHeight = Math.min(600, Math.max(100, startHeight + deltaY));
+      setTerminalHeight(newHeight);
+      localStorage.setItem("ai_ide_terminal_height", newHeight);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizingTerminal(false);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
 
   const handleMouseDownResize = (e) => {
     e.preventDefault();
@@ -669,6 +700,17 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    const handleGlobalShortcuts = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        setShowChat(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalShortcuts);
+    return () => window.removeEventListener("keydown", handleGlobalShortcuts);
+  }, []);
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1062,7 +1104,7 @@ export default function App() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const currentModel = modelsList.find(m => m.id === selectedModelId) ?? modelsList[0];
+  const currentModel = modelsList.find(m => m.id === selectedModelId) ?? modelsList[0] ?? { id: selectedModelId || "gemini-1.5-flash", label: selectedModelId || "Gemini 1.5 Flash" };
 
   const toggleTheme = () => {
     setIsLightMode((current) => {
@@ -1172,6 +1214,20 @@ export default function App() {
             }}
           >
             {terminalOpen ? "Hide Terminal" : "Show Terminal"}
+          </button>
+          <button
+            onClick={() => setShowChat(v => !v)}
+            title="Toggle AI Chat (Ctrl+Shift+I)"
+            style={{
+              background: showChat ? "rgba(124,58,237,0.25)" : "transparent",
+              border: showChat ? "1px solid rgba(139,92,246,0.5)" : "1px solid rgba(255,255,255,0.1)",
+              color: showChat ? "#c084fc" : "#9ca3af",
+              fontSize: 11, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s",
+            }}
+          >
+            <Bot size={13} color={showChat ? "#c084fc" : "#9ca3af"} />
+            <span>{showChat ? "Hide Chat" : "Show Chat"}</span>
           </button>
         </div>
 
@@ -1453,9 +1509,29 @@ export default function App() {
             />
           </div>
 
+          {/* Terminal Drag Divider Handle */}
+          {terminalOpen && (
+            <div
+              onPointerDown={handleMouseDownTerminalResize}
+              style={{
+                height: 6,
+                cursor: "row-resize",
+                background: isResizingTerminal ? "#7c3aed" : "transparent",
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                transition: "background 0.15s",
+                userSelect: "none",
+                flexShrink: 0,
+                zIndex: 10,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.4)"}
+              onMouseLeave={e => { if (!isResizingTerminal) e.currentTarget.style.background = "transparent"; }}
+              title="Drag to resize Terminal panel"
+            />
+          )}
+
           {/* ── Bottom Terminal Drawer ── */}
           <div style={{
-            height: terminalOpen ? (terminalTab === "terminal" ? 220 : 200) : 30, flexShrink: 0, transition: "height 0.15s",
+            height: terminalOpen ? terminalHeight : 30, flexShrink: 0, transition: isResizingTerminal ? "none" : "height 0.15s",
             background: "#090d11", borderTop: "1px solid rgba(255,255,255,0.08)",
             display: "flex", flexDirection: "column",
           }}>
@@ -1570,130 +1646,153 @@ export default function App() {
         </div>
 
         {/* Drag Divider Handle */}
-        <div
-          onPointerDown={handleMouseDownResize}
-          style={{
-            width: 6,
-            cursor: "col-resize",
-            background: isResizing ? "#7c3aed" : "transparent",
-            borderLeft: "1px solid rgba(255,255,255,0.06)",
-            transition: "background 0.15s",
-            userSelect: "none",
-            flexShrink: 0,
-            zIndex: 10,
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.4)"}
-          onMouseLeave={e => { if (!isResizing) e.currentTarget.style.background = "transparent"; }}
-          title="Drag to resize AI Chat panel"
-        />
+        {showChat && (
+          <div
+            onPointerDown={handleMouseDownResize}
+            style={{
+              width: 6,
+              cursor: "col-resize",
+              background: isResizing ? "#7c3aed" : "transparent",
+              borderLeft: "1px solid rgba(255,255,255,0.06)",
+              transition: "background 0.15s",
+              userSelect: "none",
+              flexShrink: 0,
+              zIndex: 10,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(139,92,246,0.4)"}
+            onMouseLeave={e => { if (!isResizing) e.currentTarget.style.background = "transparent"; }}
+            title="Drag to resize AI Chat panel"
+          />
+        )}
 
         {/* ── Chat Panel ── */}
-        <div style={{
-          width: chatWidth, display: "flex", flexDirection: "column",
-          background: "#0d1117", flexShrink: 0, overflow: "hidden",
-        }}>
-          {/* Chat Header */}
+        {showChat && (
           <div style={{
-            height: 46, display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 14px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0,
+            width: chatWidth, display: "flex", flexDirection: "column",
+            background: "#0d1117", flexShrink: 0, overflow: "hidden",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#7c3aed,#4f46e5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Bot size={15} color="white" strokeWidth={2} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.2 }}>AI Chat</div>
-                <div style={{ fontSize: 10, color: "#22c55e", lineHeight: 1.2 }}>● {currentModel.label}</div>
-              </div>
-            </div>
-            <button
-              onClick={() => setMessages(MESSAGES)}
-              style={{
-                background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)",
-                borderRadius: 6, padding: "3px 9px", cursor: "pointer", color: "#a78bfa",
-                fontSize: 11, fontFamily: "inherit", fontWeight: 500,
-              }}>
-              New Chat
-            </button>
-          </div>
-
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 0" }}>
-            {messages.map((msg, i) => (
-              <Message
-                key={i}
-                msg={msg}
-                onAcceptCode={handleAcceptCode}
-                onReplaceCode={handleReplaceCode}
-                onCreateFile={handleCreateFile}
-              />
-            ))}
-            {isTyping && <TypingDots />}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Suggestions */}
-          <div style={{ padding: "8px 14px 0", display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {SUGGESTIONS.map(s => (
-              <button key={s} onClick={() => handleSend(s)}
-                style={{
-                  fontSize: 11, padding: "3px 10px", borderRadius: 20,
-                  border: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)",
-                  color: "#9ca3af", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#a78bfa"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.2)"; e.currentTarget.style.color = "#9ca3af"; }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-
-          {/* Input Box */}
-          <div style={{ padding: 12, flexShrink: 0 }}>
+            {/* Chat Header */}
             <div style={{
-              display: "flex", flexDirection: "column", gap: 6,
-              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 10, padding: "8px 10px", transition: "border-color 0.2s",
-            }}
-              onFocus={e => e.currentTarget.style.borderColor = "rgba(139,92,246,0.4)"}
-              onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"}
-            >
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything about your code…"
-                rows={2}
+              height: 46, display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "0 14px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#7c3aed,#4f46e5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Bot size={15} color="white" strokeWidth={2} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.2 }}>AI Chat</div>
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#22c55e",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      padding: 0,
+                      outline: "none",
+                    }}
+                  >
+                    {modelsList.map((m) => (
+                      <option key={m.id} value={m.id} style={{ background: "#161b22", color: "#e2e8f0" }}>
+                        ● {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button
+                onClick={() => setMessages(MESSAGES)}
                 style={{
-                  background: "none", border: "none", outline: "none", resize: "none",
-                  color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", lineHeight: 1.5,
-                }}
-              />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 10.5, color: "#6b7280" }}>↵ send · shift+↵ newline</span>
-                <button
-                  onClick={() => handleSend()}
-                  disabled={!input.trim()}
+                  background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)",
+                  borderRadius: 6, padding: "3px 9px", cursor: "pointer", color: "#a78bfa",
+                  fontSize: 11, fontFamily: "inherit", fontWeight: 500,
+                }}>
+                New Chat
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px 0" }}>
+              {messages.map((msg, i) => (
+                <Message
+                  key={i}
+                  msg={msg}
+                  onAcceptCode={handleAcceptCode}
+                  onReplaceCode={handleReplaceCode}
+                  onCreateFile={handleCreateFile}
+                />
+              ))}
+              {isTyping && <TypingDots />}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Suggestions */}
+            <div style={{ padding: "8px 14px 0", display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => handleSend(s)}
                   style={{
-                    display: "flex", alignItems: "center", gap: 5, padding: "5px 12px",
-                    borderRadius: 7, border: "none",
-                    cursor: input.trim() ? "pointer" : "not-allowed",
-                    background: input.trim() ? "linear-gradient(135deg,#7c3aed,#4f46e5)" : "rgba(255,255,255,0.05)",
-                    color: input.trim() ? "#fff" : "#4b5563",
-                    fontSize: 12, fontWeight: 500, fontFamily: "inherit", transition: "all 0.15s",
+                    fontSize: 11, padding: "3px 10px", borderRadius: 20,
+                    border: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.07)",
+                    color: "#9ca3af", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
                   }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#a78bfa"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.2)"; e.currentTarget.style.color = "#9ca3af"; }}
                 >
-                  Send
-                  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                    <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  {s}
                 </button>
+              ))}
+            </div>
+
+            {/* Input Box */}
+            <div style={{ padding: 12, flexShrink: 0 }}>
+              <div style={{
+                display: "flex", flexDirection: "column", gap: 6,
+                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 10, padding: "8px 10px", transition: "border-color 0.2s",
+              }}
+                onFocus={e => e.currentTarget.style.borderColor = "rgba(139,92,246,0.4)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"}
+              >
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask anything about your code…"
+                  rows={2}
+                  style={{
+                    background: "none", border: "none", outline: "none", resize: "none",
+                    color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", lineHeight: 1.5,
+                  }}
+                />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 10.5, color: "#6b7280" }}>↵ send · shift+↵ newline</span>
+                  <button
+                    onClick={() => handleSend()}
+                    disabled={!input.trim()}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 5, padding: "5px 12px",
+                      borderRadius: 7, border: "none",
+                      cursor: input.trim() ? "pointer" : "not-allowed",
+                      background: input.trim() ? "linear-gradient(135deg,#7c3aed,#4f46e5)" : "rgba(255,255,255,0.05)",
+                      color: input.trim() ? "#fff" : "#4b5563",
+                      fontSize: 12, fontWeight: 500, fontFamily: "inherit", transition: "all 0.15s",
+                    }}
+                  >
+                    Send
+                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

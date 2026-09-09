@@ -32,7 +32,8 @@ async def terminal_websocket(websocket: WebSocket):
         await websocket.close(code=1008)
         return
     try:
-        await verify_token(websocket.query_params.get("access_token", ""), settings)
+        token = websocket.query_params.get("access_token") or websocket.query_params.get("token") or ""
+        await verify_token(token, settings)
     except Exception:
         await websocket.close(code=1008)
         return
@@ -49,7 +50,8 @@ async def interactive_run_websocket(websocket: WebSocket):
         await websocket.close(code=1008)
         return
     try:
-        await verify_token(websocket.query_params.get("access_token", ""), settings)
+        token = websocket.query_params.get("access_token") or websocket.query_params.get("token") or ""
+        await verify_token(token, settings)
     except Exception:
         await websocket.close(code=1008)
         return
