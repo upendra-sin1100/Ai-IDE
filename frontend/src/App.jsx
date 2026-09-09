@@ -162,16 +162,72 @@ function fileBadge(name, color, size = 16) {
   return <FileText size={size} color={color} strokeWidth={2.1} />;
 }
 
+function robustParseCreateFile(raw) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+
+  // Strategy 1: Direct JSON.parse
+  try {
+    const data = JSON.parse(trimmed);
+    const path = data.path || data.file_path || data.filename || data.file;
+    const content = data.content ?? data.code ?? "";
+    if (path && typeof path === "string") {
+      return { path: path.trim(), content };
+    }
+  } catch (e) {
+    /* proceed to repair */
+  }
+
+  // Strategy 2: Fix unescaped control chars / multiline strings in JSON value
+  try {
+    const fixed = trimmed.replace(/"(content|code)"\s*:\s*"([\s\S]*?)"\s*\}\s*$/i, (match, key, codeContent) => {
+      const escaped = codeContent
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+        .replace(/\t/g, "\\t");
+      return `"${key}": "${escaped}"}`;
+    });
+    const data = JSON.parse(fixed);
+    const path = data.path || data.file_path || data.filename || data.file;
+    const content = data.content ?? data.code ?? "";
+    if (path && typeof path === "string") {
+      return { path: path.trim(), content };
+    }
+  } catch (e) {
+    /* proceed to regex */
+  }
+
+  // Strategy 3: Regex match key-values
+  const pathMatch = trimmed.match(/"(?:path|file_path|filename|file)"\s*:\s*"([^"]+)"/i);
+  if (pathMatch) {
+    const path = pathMatch[1].trim();
+    // Look for content field
+    const contentMatch = trimmed.match(/"(?:content|code)"\s*:\s*"([\s\S]*?)"(?:\s*\}|\s*$)/i);
+    let content = "";
+    if (contentMatch) {
+      content = contentMatch[1]
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\");
+    }
+    return { path, content };
+  }
+
+  return null;
+}
+
 function parseCreateFiles(content) {
   const edits = [];
+  if (!content) return { visibleContent: "", edits };
+
   const visibleContent = content.replace(/<CREATE_FILE>\s*([\s\S]*?)\s*<\/CREATE_FILE>/gi, (_, raw) => {
-    try {
-      const data = JSON.parse(raw.trim());
-      if (data.path) {
-        edits.push({ file_path: data.path, content: data.content || "", is_new_file: true });
-      }
-    } catch {
-      return _;
+    const parsed = robustParseCreateFile(raw);
+    if (parsed && parsed.path) {
+      edits.push({ file_path: parsed.path, content: parsed.content || "", is_new_file: true });
     }
     return "";
   }).replace(/\n{3,}/g, "\n\n").trim();

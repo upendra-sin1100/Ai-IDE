@@ -78,29 +78,43 @@ def parse_and_validate_create_file_actions(
     matches = re.findall(pattern, text, re.IGNORECASE)
 
     for match in matches:
+        data = None
+        trimmed = match.strip()
         try:
-            data = json.loads(match.strip())
-            file_path = data.get("path")
-            content = data.get("content", "")
+            data = json.loads(trimmed)
+        except Exception:
+            # Fallback regex extraction for multiline JSON content
+            path_m = re.search(r'"(?:path|file_path|filename|file)"\s*:\s*"([^"]+)"', trimmed, re.IGNORECASE)
+            if path_m:
+                path_val = path_m.group(1).strip()
+                content_m = re.search(r'"(?:content|code)"\s*:\s*"([\s\S]*?)"(?:\s*\}|\s*$)', trimmed, re.IGNORECASE)
+                content_val = ""
+                if content_m:
+                    content_val = content_m.group(1)
+                    content_val = content_val.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+                data = {"path": path_val, "content": content_val}
 
-            if not file_path or not isinstance(file_path, str):
-                continue
-
-            # Validate path safety against workspace_root
-            try:
-                workspace_service._resolve_path(file_path)
-            except Exception as exc:
-                print(f"Path traversal check rejected path '{file_path}': {exc}")
-                continue
-
-            actions.append({
-                "file_path": file_path,
-                "content": content,
-                "is_new_file": True,
-            })
-        except Exception as exc:
-            print(f"Failed to parse <CREATE_FILE> block: {exc}")
+        if not data:
             continue
+
+        file_path = data.get("path") or data.get("file_path") or data.get("filename") or data.get("file")
+        content = data.get("content") or data.get("code") or ""
+
+        if not file_path or not isinstance(file_path, str):
+            continue
+
+        # Validate path safety against workspace_root
+        try:
+            workspace_service._resolve_path(file_path)
+        except Exception as exc:
+            print(f"Path traversal check rejected path '{file_path}': {exc}")
+            continue
+
+        actions.append({
+            "file_path": file_path,
+            "content": content,
+            "is_new_file": True,
+        })
 
     return actions
 
